@@ -334,3 +334,7 @@ class FontUsageEvent(FontUsageEventBase):
     id: int
     user_id: int
     created_at: datetime
+
+
+# Rebuild models to resolve forward references
+FontDetail.model_rebuild()
