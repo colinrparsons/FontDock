@@ -236,24 +236,8 @@ class FontWithCollections(Font):
     collections: List[Collection] = []
 
 
-class FontDetail(Font):
-    family: Optional[FontFamily] = None
-    collections: List[Collection] = []
-    aliases: List[FontAlias] = []
-
-
-class FontList(BaseModel):
-    items: List[FontWithFamily]
-    total: int
-
-
-class FontUploadResponse(BaseModel):
-    success: bool
-    font_id: Optional[int] = None
-    message: str
-
-
 # ============= Font Alias Schemas =============
+# Define FontAlias BEFORE FontDetail to avoid forward reference issues
 
 class FontAliasBase(BaseModel):
     font_id: int
@@ -271,6 +255,24 @@ class FontAlias(FontAliasBase):
     
     id: int
     created_at: datetime
+
+
+# Now FontDetail can reference FontAlias
+class FontDetail(Font):
+    family: Optional[FontFamily] = None
+    collections: List[Collection] = []
+    aliases: List[FontAlias] = []
+
+
+class FontList(BaseModel):
+    items: List[FontWithFamily]
+    total: int
+
+
+class FontUploadResponse(BaseModel):
+    success: bool
+    font_id: Optional[int] = None
+    message: str
 
 
 # ============= Search Schemas =============
