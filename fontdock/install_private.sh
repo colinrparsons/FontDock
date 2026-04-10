@@ -148,6 +148,7 @@ systemctl restart nginx
 
 echo ""
 echo "👤 Creating admin user..."
+cd $INSTALL_DIR
 sudo -u $SERVICE_USER $INSTALL_DIR/venv/bin/python $INSTALL_DIR/scripts/create_admin.py
 
 echo ""
