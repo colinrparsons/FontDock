@@ -1,8 +1,10 @@
 """Pydantic schemas for FontDock."""
-from __future__ import annotations
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict
+
+if TYPE_CHECKING:
+    from typing import Any
 
 
 # ============= Auth Schemas =============
