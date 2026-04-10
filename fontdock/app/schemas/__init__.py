@@ -136,10 +136,6 @@ class Collection(CollectionBase):
     updated_at: datetime
 
 
-class CollectionWithFonts(Collection):
-    fonts: List["Font"] = []
-
-
 class CollectionList(BaseModel):
     items: List[Collection]
     total: int
@@ -181,10 +177,6 @@ class FontFamily(FontFamilyBase):
     id: int
     created_at: datetime
     updated_at: datetime
-
-
-class FontFamilyWithFonts(FontFamily):
-    fonts: List["Font"] = []
 
 
 class FontFamilyList(BaseModel):
@@ -236,6 +228,15 @@ class FontWithFamily(Font):
 
 class FontWithCollections(Font):
     collections: List[Collection] = []
+
+
+# These must come AFTER Font is defined
+class CollectionWithFonts(Collection):
+    fonts: List[Font] = []
+
+
+class FontFamilyWithFonts(FontFamily):
+    fonts: List[Font] = []
 
 
 # ============= Font Alias Schemas =============
