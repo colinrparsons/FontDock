@@ -44,8 +44,15 @@ def change_password():
             print("Password must be at least 6 characters!")
             return
         
+        if len(password) > 72:
+            print("Password must be less than 72 characters!")
+            return
+        
+        # Encode password to bytes and truncate if needed (bcrypt limitation)
+        password_bytes = password.encode('utf-8')[:72]
+        
         # Update password
-        user.password_hash = pwd_context.hash(password)
+        user.password_hash = pwd_context.hash(password_bytes.decode('utf-8'))
         db.commit()
         
         print(f"✓ Password updated for user '{username}'")
