@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+
+{% block title %}Users - FontDock{% endblock %}
+
+{% block content %}
+<script>
+const token = localStorage.getItem('token');
+if (!token) {
+    window.location.href = '/ui/login';
+}
+</script>
+
+<h2>User Management</h2>
+
+<div class="card" style="padding: 0.75rem;">
+    <h3 style="margin: 0 0 0.5rem 0;">Create New User</h3>
+    <form id="create-user-form">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+            <div style="margin: 0;">
+                <label style="font-size: 13px;">First Name:</label>
+                <input type="text" id="first_name" class="search-box" style="width: 100%; margin-top: 2px;" required>
+            </div>
+            <div style="margin: 0;">
+                <label style="font-size: 13px;">Last Name:</label>
+                <input type="text" id="last_name" class="search-box" style="width: 100%; margin-top: 2px;" required>
+            </div>
+            <div style="margin: 0;">
+                <label style="font-size: 13px;">Username (Login):</label>
+                <input type="text" id="username" class="search-box" style="width: 100%; margin-top: 2px;" required>
+            </div>
+            <div style="margin: 0;">
+                <label style="font-size: 13px;">Email:</label>
+                <input type="email" id="email" class="search-box" style="width: 100%; margin-top: 2px;" required>
+            </div>
+            <div style="margin: 0;">
+                <label style="font-size: 13px;">Password:</label>
+                <input type="password" id="password" class="search-box" style="width: 100%; margin-top: 2px;" required>
+            </div>
+            <div style="margin: 0; display: flex; align-items: flex-end;">
+                <label style="font-size: 13px; display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                    <input type="checkbox" id="is_admin">
+                    <span>Admin user</span>
+                </label>
+            </div>
+        </div>
+        <div style="margin-top: 0.5rem;">
+            <button type="submit" class="btn">Create User</button>
+            <span id="create-result" style="margin-left: 1rem; font-size: 13px;"></span>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <input type="text" class="search-box" placeholder="Search users..." id="search" style="margin: 0; flex: 1; margin-right: 1rem;">
+    </div>
+    
+    {% if users %}
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Username</th>
+                <th>Email</th>
+                <th>Admin</th>
+                <th>Active</th>
+                <th>Sessions</th>
+                <th>Created</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr data-user-id="{{ user.id }}">
+                <td>{{ user.first_name or '' }} {{ user.last_name or '' }}</td>
+                <td>{{ user.username }}</td>
+                <td>{{ user.email }}</td>
+                <td>{% if user.is_admin %}Yes{% else %}No{% endif %}</td>
+                <td>{% if user.is_active %}Active{% else %}Inactive{% endif %}</td>
+                <td class="session-count" data-user-id="{{ user.id }}">-</td>
+                <td>{{ user.created_at.strftime('%Y-%m-%d') }}</td>
+                <td>
+                    <a href="#" class="btn" onclick="event.preventDefault(); editUser('{{ user.id }}', '{{ user.username }}')">Edit</a>
+                    {% if user.is_active %}
+                    <a href="#" class="btn" style="background: #dc3545;" onclick="event.preventDefault(); deactivateUser('{{ user.id }}')">Deactivate</a>
+                    {% endif %}
+                    <button class="btn" style="background: #dc3545;" onclick="deleteUser('{{ user.id }}', '{{ user.username }}')">Delete</button>
+                    <button class="btn logout-btn" data-user-id="{{ user.id }}" style="background: #fd7e14; display: none;" onclick="logoutUser('{{ user.id }}', '{{ user.username }}')">Logout User</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #666; text-align: center; padding: 2rem;">No users found.</p>
+    {% endif %}
+</div>
+
+<script>
+document.getElementById('create-user-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const resultSpan = document.getElementById('create-result');
+    resultSpan.textContent = 'Creating...';
+    
+    const userData = {
+        first_name: document.getElementById('first_name').value,
+        last_name: document.getElementById('last_name').value,
+        username: document.getElementById('username').value,
+        email: document.getElementById('email').value,
+        password: document.getElementById('password').value,
+        is_admin: document.getElementById('is_admin').checked,
+        is_active: true
+    };
+    
+    try {
+        const response = await fetch('/api/users', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify(userData)
+        });
+        
+        if (response.ok) {
+            resultSpan.innerHTML = '<span style="color: #4ade80;">User created!</span>';
+            document.getElementById('create-user-form').reset();
+            setTimeout(() => location.reload(), 1000);
+        } else if (response.status === 401) {
+            location.href = '/ui/login';
+        } else if (response.status === 403) {
+            resultSpan.innerHTML = '<span style="color: #f87171;">Admin access required</span>';
+        } else {
+            const data = await response.json();
+            resultSpan.innerHTML = '<span style="color: #f87171;">' + (data.detail || 'Failed to create user') + '</span>';
+        }
+    } catch (err) {
+        resultSpan.innerHTML = '<span style="color: #f87171;">Error: ' + err.message + '</span>';
+    }
+});
+
+function editUser(id, username) {
+    const email = prompt('New email for ' + username + ':');
+    if (!email) return;
+    const firstName = prompt('First name:');
+    const lastName = prompt('Last name:');
+    const isAdmin = confirm('Is admin?');
+    const isActive = confirm('Is active?');
+    
+    fetch(`/api/users/${id}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({
+            email: email,
+            first_name: firstName || null,
+            last_name: lastName || null,
+            is_admin: isAdmin,
+            is_active: isActive
+        })
+    }).then(r => {
+        if (r.ok) location.reload();
+        else if (r.status === 401) location.href = '/ui/login';
+        else if (r.status === 403) alert('Admin access required');
+        else alert('Failed to update user');
+    });
+}
+
+function deactivateUser(id) {
+    if (!confirm('Deactivate this user?')) return;
+    
+    fetch(`/api/users/${id}`, {
+        method: 'DELETE',
+        headers: {
+            'Authorization': 'Bearer ' + token
+        }
+    }).then(r => {
+        if (r.ok) location.reload();
+        else if (r.status === 401) location.href = '/ui/login';
+        else if (r.status === 403) alert('Admin access required');
+        else alert('Failed to deactivate user');
+    });
+}
+
+// Load active sessions and update UI
+async function loadSessions() {
+    try {
+        const response = await fetch('/auth/sessions', {
+            headers: {
+                'Authorization': 'Bearer ' + token
+            }
+        });
+        
+        if (response.ok) {
+            const sessions = await response.json();
+            
+            // Count sessions per user
+            const userSessionCounts = {};
+            sessions.forEach(s => {
+                userSessionCounts[s.user_id] = (userSessionCounts[s.user_id] || 0) + 1;
+            });
+            
+            // Update UI
+            document.querySelectorAll('.session-count').forEach(cell => {
+                const userId = parseInt(cell.dataset.userId);
+                const count = userSessionCounts[userId] || 0;
+                cell.textContent = count > 0 ? count + ' active' : '-';
+                if (count > 0) {
+                    cell.style.color = '#4ade80';
+                    cell.style.fontWeight = 'bold';
+                }
+            });
+            
+            // Show logout buttons for users with active sessions
+            document.querySelectorAll('.logout-btn').forEach(btn => {
+                const userId = parseInt(btn.dataset.userId);
+                btn.style.display = userSessionCounts[userId] ? 'inline-block' : 'none';
+            });
+        }
+    } catch (err) {
+        console.error('Failed to load sessions:', err);
+    }
+}
+
+function deleteUser(userId, username) {
+    if (!confirm(`Delete user ${username}? This cannot be undone.`)) return;
+    
+    fetch(`/api/users/${userId}`, {
+        method: 'DELETE',
+        headers: {
+            'Authorization': 'Bearer ' + token
+        }
+    }).then(r => {
+        if (r.ok) {
+            alert('User deleted successfully');
+            location.reload();
+        } else if (r.status === 401) {
+            location.href = '/ui/login';
+        } else if (r.status === 403) {
+            alert('Admin access required');
+        } else {
+            alert('Failed to delete user');
+        }
+    });
+}
+
+function logoutUser(userId, username) {
+    if (!confirm(`Force logout ${username}? This will end all their active sessions.`)) return;
+    
+    fetch(`/auth/logout-user/${userId}`, {
+        method: 'POST',
+        headers: {
+            'Authorization': 'Bearer ' + token
+        }
+    }).then(r => {
+        if (r.ok) {
+            alert('User logged out successfully');
+            loadSessions(); // Refresh session display
+        } else if (r.status === 401) {
+            location.href = '/ui/login';
+        } else if (r.status === 403) {
+            alert('Admin access required');
+        } else {
+            alert('Failed to logout user');
+        }
+    });
+}
+
+// Load sessions on page load
+loadSessions();
+
+// Refresh sessions every 30 seconds
+setInterval(loadSessions, 30000);
+
+document.getElementById('search').addEventListener('input', (e) => {
+    const term = e.target.value.toLowerCase();
+    document.querySelectorAll('tbody tr').forEach(row => {
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.includes(term) ? '' : 'none';
+    });
+});
+</script>
+{% endblock %}

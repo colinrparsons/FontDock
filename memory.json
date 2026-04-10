@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "brain": {
+      "command": "/home/colin/mcp/venv/bin/python3",
+      "args": ["/home/colin/mcp/brain_mcp_server.py"],
+      "env": {...}
+    }
+  }
+}

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - FontDock{% endblock %}
+
+{% block content %}
+<script>
+const token = localStorage.getItem('token');
+if (!token) {
+    window.location.href = '/ui/login';
+}
+</script>
+
+<h2>Dashboard</h2>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+    <div class="card">
+        <h3 style="margin: 0; color: #e94560;">{{ total_fonts }}</h3>
+        <p style="margin: 0.5rem 0 0 0; color: #666;">Total Fonts</p>
+    </div>
+    <div class="card">
+        <h3 style="margin: 0; color: #e94560;">{{ total_families }}</h3>
+        <p style="margin: 0.5rem 0 0 0; color: #666;">Font Families</p>
+    </div>
+    <div class="card">
+        <h3 style="margin: 0; color: #e94560;">{{ total_collections }}</h3>
+        <p style="margin: 0.5rem 0 0 0; color: #666;">Collections</p>
+    </div>
+    <div class="card">
+        <h3 style="margin: 0; color: #e94560;">{{ total_clients }}</h3>
+        <p style="margin: 0.5rem 0 0 0; color: #666;">Clients</p>
+    </div>
+</div>
+
+<h3>Quick Links</h3>
+<div class="card">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem;">
+        <a href="/ui/fonts" class="btn" style="text-align: center;">Browse Fonts</a>
+        <a href="/ui/collections" class="btn" style="text-align: center;">Collections</a>
+        <a href="/ui/clients" class="btn" style="text-align: center;">Clients</a>
+        <a href="/ui/upload" class="btn" style="text-align: center;">Upload Font</a>
+        <a href="/ui/users" class="btn" style="text-align: center;">Manage Users</a>
+    </div>
+</div>
+
+<h3>Recent Uploads (Last 10)</h3>
+<div class="card" style="max-height: 450px; overflow-y: auto; font-size: 14px; padding: 0;">
+    {% if recent_fonts %}
+    <table style="width: 100%; table-layout: fixed; border-collapse: collapse;">
+        <thead style="position: sticky; top: 0; background: #f8f9fa; z-index: 1;">
+            <tr>
+                <th style="padding: 0.75rem; text-align: left; border-bottom: 2px solid #dee2e6;">Font</th>
+                <th style="padding: 0.75rem; text-align: left; border-bottom: 2px solid #dee2e6;">Family</th>
+                <th style="padding: 0.75rem; text-align: left; border-bottom: 2px solid #dee2e6;">Type</th>
+                <th style="padding: 0.75rem; text-align: left; border-bottom: 2px solid #dee2e6;">Uploaded</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for font in recent_fonts %}
+            <tr style="border-bottom: 1px solid #dee2e6;">
+                <td style="padding: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ font.postscript_name or font.filename_original }}</td>
+                <td style="padding: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ font.family.name if font.family else 'Unknown' }}</td>
+                <td style="padding: 0.75rem;">
+                    {% if font.extension %}
+                        {% if font.extension.lower() == '.ttf' %}TrueType
+                        {% elif font.extension.lower() == '.otf' %}OpenType
+                        {% elif font.extension.lower() == '.woff' %}WOFF
+                        {% elif font.extension.lower() == '.woff2' %}WOFF2
+                        {% else %}{{ font.extension.upper().lstrip('.') }}
+                        {% endif %}
+                    {% else %}-{% endif %}
+                </td>
+                <td style="padding: 0.75rem; white-space: nowrap;">{{ font.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #666; padding: 1rem;">No fonts uploaded yet.</p>
+    {% endif %}
+</div>
+{% endblock %}

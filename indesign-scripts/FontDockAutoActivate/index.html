@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <script src="main.js"></script>
+</head>
+<style>
+  .wrapper {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    height: 100vh;
+    flex-direction: column;
+    display: flex;
+    padding: 16px;
+    font-family: -apple-system, sans-serif;
+  }
+  
+  h2 {
+    margin: 0 0 16px 0;
+    font-size: 18px;
+    color: #00bcd4;
+  }
+  
+  #status {
+    padding: 12px;
+    background: #2a2a2a;
+    border-radius: 4px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #ffffff;
+    margin-bottom: 16px;
+  }
+  
+  .info {
+    font-size: 12px;
+    color: #888;
+    margin-top: auto;
+  }
+</style>
+
+<body>
+  <div class="wrapper">
+    <h2>FontDock Auto-Activate</h2>
+    <div id="status">Ready - waiting for documents with missing fonts</div>
+    <div class="info">
+      <p>This plugin automatically activates missing fonts when you open InDesign documents.</p>
+      <p>Make sure the FontDock client is running on your Mac.</p>
+    </div>
+  </div>
+</body>
+</html>

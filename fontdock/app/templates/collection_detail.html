@@ -1,0 +1,770 @@
+{% extends "base.html" %}
+
+{% block title %}Collection Detail - FontDock{% endblock %}
+
+{% block content %}
+<script>
+const token = localStorage.getItem('token');
+if (!token) {
+    window.location.href = '/ui/login';
+}
+</script>
+
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+    <h2 style="margin: 0;">{{ collection.name }}</h2>
+    <a href="/ui/collections" class="btn">Back to Collections</a>
+</div>
+
+<div class="card">
+    <h3>Collection Info</h3>
+    <p><strong>Client:</strong> {{ collection.client.name if collection.client else 'Global' }}</p>
+    <p><strong>Status:</strong> {% if collection.is_active %}Active{% else %}Inactive{% endif %}</p>
+    <p><strong>Created:</strong> {{ collection.created_at.strftime('%Y-%m-%d') }}</p>
+    {% if collection.description %}
+    <p><strong>Description:</strong> {{ collection.description }}</p>
+    {% endif %}
+</div>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h3 style="margin: 0;">Fonts in Collection</h3>
+        <div style="display: flex; gap: 0.5rem;">
+            <button class="btn" onclick="showAddClientFonts()">+ Add Client Fonts</button>
+            <button class="btn" onclick="showAddFonts()">+ Add Fonts</button>
+        </div>
+    </div>
+    
+    {% if collection.fonts %}
+    {# Group fonts by family #}
+    {% set family_groups = {} %}
+    {% for font in collection.fonts %}
+        {% set family_name = font.family.name if font.family else 'Unknown' %}
+        {% if family_name not in family_groups %}
+            {% set _ = family_groups.update({family_name: []}) %}
+        {% endif %}
+        {% set _ = family_groups[family_name].append(font) %}
+    {% endfor %}
+    
+    <div class="font-list" id="collection-font-list">
+        {% for family_name in family_groups.keys() | sort %}
+        {% set family_fonts = family_groups[family_name] %}
+        {% set family_id = loop.index %}
+        <div class="family-row" data-family="{{ family_name | lower }}">
+            <div class="family-header" onclick="toggleFamily('{{ family_id }}')">
+                <span class="expand-icon" id="icon-{{ family_id }}">▼</span>
+                <span class="family-name">{{ family_name }}</span>
+                <span class="family-count">{{ family_fonts | length }} style{{ 's' if family_fonts | length > 1 else '' }}</span>
+                <span class="family-format">
+                    {% if family_fonts and family_fonts[0].extension %}
+                        {% if family_fonts[0].extension in ['.ttf', '.ttc'] %}TrueType{% elif family_fonts[0].extension == '.otf' %}OpenType{% else %}{{ family_fonts[0].extension | upper }}{% endif %}
+                    {% else %}Unknown{% endif %}
+                </span>
+            </div>
+            <div class="family-styles" id="styles-{{ family_id }}" style="display: none;">
+                {% for font in family_fonts %}
+                <div class="style-row" data-style="{{ font.style_name | lower }}" data-font-id="{{ font.id }}">
+                    <div class="style-preview" id="preview-{{ font.id }}">
+                        <span class="loading">Loading...</span>
+                    </div>
+                    <div class="style-info">
+                        <span class="style-name">{{ font.style_name or 'Regular' }}</span>
+                        <span class="style-format">
+                            {% if font.extension %}
+                                {% if font.extension in ['.ttf', '.ttc'] %}TrueType{% elif font.extension == '.otf' %}OpenType{% else %}{{ font.extension | upper }}{% endif %}
+                            {% else %}-{% endif %}
+                        </span>
+                        <a href="#" class="btn" onclick="event.stopPropagation(); downloadFont('{{ font.id }}');">Download</a>
+                        <a href="#" class="btn" style="background: #dc3545;" onclick="event.stopPropagation(); removeFont('{{ font.id }}');">Remove</a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p style="color: #666;">No fonts in this collection yet.</p>
+    {% endif %}
+</div>
+
+<!-- Add Client Fonts Modal -->
+<div id="add-client-fonts-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: #fff; padding: 2rem; border-radius: 8px; max-width: 500px; width: 90%; border: 1px solid #dee2e6; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+        <h3 style="color: #212529; margin-top: 0;">Add All Client Fonts</h3>
+        <p style="color: #6c757d; margin-bottom: 1.5rem;">Select a client to add all their fonts to this collection.</p>
+        
+        <div id="clients-list" style="max-height: 400px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px; margin-bottom: 1rem;">
+            <p style="color: #6c757d; padding: 1rem;">Loading clients...</p>
+        </div>
+        
+        <div style="text-align: right;">
+            <button class="btn" onclick="hideAddClientFonts()" style="background: #6c757d;">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- Add Fonts Modal -->
+<div id="add-fonts-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: #fff; padding: 2rem; border-radius: 8px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; border: 1px solid #dee2e6; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+        <h3 style="color: #212529; margin-top: 0;">Add Fonts to Collection</h3>
+        <input type="text" class="search-box" id="font-search" placeholder="Search available fonts..." style="margin-bottom: 1rem; border: 1px solid #dee2e6;">
+        
+        <div id="available-fonts-list" style="max-height: 400px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px;">
+            <p style="color: #6c757d; padding: 1rem;">Loading fonts...</p>
+        </div>
+        
+        <div style="margin-top: 1rem; text-align: right;">
+            <button class="btn" onclick="hideAddFonts()" style="background: #6c757d;">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.font-list {
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #fff;
+}
+.family-row {
+    border-bottom: 1px solid #dee2e6;
+}
+.family-row:last-child {
+    border-bottom: none;
+}
+.family-header {
+    display: grid;
+    grid-template-columns: 30px 1fr 100px 150px;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: #f8f9fa;
+    cursor: pointer;
+    transition: background 0.2s;
+    border-bottom: 1px solid #dee2e6;
+}
+.family-header:hover {
+    background: #e9ecef;
+}
+.expand-icon {
+    color: #e94560;
+    font-size: 0.8rem;
+    transition: transform 0.2s;
+}
+.expand-icon.collapsed {
+    transform: rotate(-90deg);
+}
+.family-name {
+    font-weight: bold;
+    color: #212529;
+}
+.family-count {
+    color: #6c757d;
+    font-size: 0.85rem;
+}
+.family-format {
+    color: #6c757d;
+    font-size: 0.85rem;
+    text-align: right;
+}
+.family-styles {
+    background: #fff;
+}
+.style-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid #dee2e6;
+}
+.style-row:last-child {
+    border-bottom: none;
+}
+.style-preview {
+    flex: 1;
+    padding-right: 1rem;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+}
+.style-preview .loading {
+    color: #6c757d;
+    font-size: 0.8rem;
+}
+.style-preview-text {
+    font-size: 24px;
+    color: #212529;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.style-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    min-width: 250px;
+}
+.style-name {
+    color: #495057;
+    font-size: 0.9rem;
+    min-width: 100px;
+}
+.style-format {
+    color: #6c757d;
+    font-size: 0.8rem;
+    min-width: 80px;
+}
+.style-info .btn {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+}
+.hidden {
+    display: none !important;
+}
+
+/* Modal styles */
+.font-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    border-bottom: 1px solid #dee2e6;
+    background: #fff;
+}
+.font-item:hover {
+    background: #f8f9fa;
+}
+.font-item strong {
+    color: #212529;
+}
+.font-item small {
+    color: #6c757d;
+}
+.add-family-btn {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    background: #28a745;
+}
+.add-font-btn {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    background: #17a2b8;
+}
+
+/* Modal-specific styles */
+#available-fonts-list .family-row {
+    border-bottom: 1px solid #dee2e6;
+}
+#available-fonts-list .family-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: #f8f9fa;
+    cursor: pointer;
+    border-bottom: 1px solid #dee2e6;
+}
+#available-fonts-list .family-header:hover {
+    background: #e9ecef;
+}
+#available-fonts-list .family-header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 0;
+}
+#available-fonts-list .family-header-right {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+#available-fonts-list .family-fonts {
+    display: none;
+    background: #fff;
+}
+#available-fonts-list .family-fonts.expanded {
+    display: block;
+}
+</style>
+
+<script>
+const collectionId = '{{ collection.id }}';
+
+// Store font data for preview loading
+const fontData = {};
+{% if collection.fonts %}
+{% for font in collection.fonts %}
+fontData[{{ font.id }}] = {
+    family: '{{ (font.family.name if font.family else "Unknown") | replace("'", "\\'") }}',
+    style: '{{ (font.style_name | replace("'", "\\'") or "Regular") }}',
+    postscript: '{{ (font.postscript_name | replace("'", "\\'")) }}',
+    extension: '{{ font.extension or ".ttf" }}'
+};
+{% endfor %}
+{% endif %}
+
+function toggleFamily(familyId) {
+    console.log('toggleFamily called:', familyId);
+    const stylesDiv = document.getElementById('styles-' + familyId);
+    const icon = document.getElementById('icon-' + familyId);
+    
+    console.log('stylesDiv:', stylesDiv, 'icon:', icon);
+    
+    if (!stylesDiv) {
+        console.error('Could not find stylesDiv for familyId:', familyId);
+        return;
+    }
+    
+    if (stylesDiv.style.display === 'none' || stylesDiv.style.display === '') {
+        stylesDiv.style.display = 'block';
+        icon.classList.remove('collapsed');
+        // Load previews for this family's fonts
+        loadFamilyPreviews(familyId);
+    } else {
+        stylesDiv.style.display = 'none';
+        icon.classList.add('collapsed');
+    }
+}
+
+async function loadFamilyPreviews(familyId) {
+    const stylesDiv = document.getElementById('styles-' + familyId);
+    const styleRows = stylesDiv.querySelectorAll('.style-row');
+    
+    for (const row of styleRows) {
+        const fontId = row.dataset.fontId;
+        const previewDiv = document.getElementById('preview-' + fontId);
+        
+        if (previewDiv.dataset.loaded) continue;
+        previewDiv.dataset.loaded = 'true';
+        
+        try {
+            // Get font info
+            const fontInfo = fontData[fontId];
+            const ext = fontInfo ? fontInfo.extension.toLowerCase() : '.ttf';
+            const format = ext === '.otf' ? 'opentype' : 'truetype';
+            
+            // Load the actual font file
+            const fontUrl = '/api/fonts/' + fontId + '/download';
+            const fontUrlWithToken = fontUrl + '?token=' + encodeURIComponent(token);
+            const fontFaceName = 'Font-' + fontId;
+            
+            // Create @font-face rule with correct format
+            const style = document.createElement('style');
+            style.textContent = `
+                @font-face {
+                    font-family: '${fontFaceName}';
+                    src: url('${fontUrlWithToken}') format('${format}');
+                }
+            `;
+            document.head.appendChild(style);
+            
+            // Create preview text
+            previewDiv.innerHTML = `<span class="style-preview-text" style="font-family: '${fontFaceName}', sans-serif;">The quick brown fox jumps over the lazy dog</span>`;
+        } catch (err) {
+            console.error('Font preview error:', err);
+            previewDiv.innerHTML = '<span class="style-preview-text">The quick brown fox jumps over the lazy dog</span>';
+        }
+    }
+}
+
+async function showAddClientFonts() {
+    document.getElementById('add-client-fonts-modal').style.display = 'flex';
+    await loadClients();
+}
+
+function hideAddClientFonts() {
+    document.getElementById('add-client-fonts-modal').style.display = 'none';
+}
+
+async function loadClients() {
+    const list = document.getElementById('clients-list');
+    list.innerHTML = '<p style="padding: 1rem;">Loading clients...</p>';
+    
+    try {
+        const response = await fetch('/api/clients?limit=100', {
+            headers: {'Authorization': 'Bearer ' + token}
+        });
+        if (!response.ok) throw new Error('Failed to load clients');
+        
+        const data = await response.json();
+        const clients = data.items || [];
+        
+        if (clients.length === 0) {
+            list.innerHTML = '<p style="color: #6c757d; padding: 1rem;">No clients found.</p>';
+            return;
+        }
+        
+        list.innerHTML = clients.map(client => `
+            <div class="font-item" style="cursor: pointer;" onclick="addClientFontsToCollection(${client.id}, '${client.name.replace(/'/g, "\\'")}')">
+                <div>
+                    <strong>${client.name}</strong>
+                    <br><small style="color: #6c757d;">${client.code || 'No code'}</small>
+                </div>
+                <button class="btn" style="background: #28a745; font-size: 0.75rem; padding: 0.25rem 0.5rem;">Add All Fonts</button>
+            </div>
+        `).join('');
+    } catch (err) {
+        list.innerHTML = '<p style="color: #dc3545; padding: 1rem;">Error loading clients</p>';
+    }
+}
+
+async function addClientFontsToCollection(clientId, clientName) {
+    if (!confirm(`Add all fonts from "${clientName}" to this collection?`)) return;
+    
+    try {
+        // Get all fonts for this client
+        const response = await fetch(`/api/clients/${clientId}/fonts`, {
+            headers: {'Authorization': 'Bearer ' + token}
+        });
+        
+        if (!response.ok) throw new Error('Failed to load client fonts');
+        
+        const fonts = await response.json();
+        
+        if (!fonts || fonts.length === 0) {
+            alert(`No fonts found for client "${clientName}"`);
+            return;
+        }
+        
+        // Add each font to the collection
+        let added = 0;
+        let skipped = 0;
+        
+        for (const font of fonts) {
+            try {
+                const addResponse = await fetch(`/api/collections/${collectionId}/fonts`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Bearer ' + token,
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: `font_id=${font.id}`
+                });
+                
+                if (addResponse.ok) {
+                    added++;
+                } else if (addResponse.status === 409) {
+                    skipped++; // Already in collection
+                }
+            } catch (err) {
+                console.error('Error adding font:', err);
+            }
+        }
+        
+        alert(`Added ${added} fonts from "${clientName}" to collection. ${skipped > 0 ? `(${skipped} already in collection)` : ''}`);
+        location.reload();
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+async function showAddFonts() {
+    document.getElementById('add-fonts-modal').style.display = 'flex';
+    await loadAvailableFonts();
+}
+
+function hideAddFonts() {
+    document.getElementById('add-fonts-modal').style.display = 'none';
+}
+
+let allFonts = [];
+
+async function loadAvailableFonts() {
+    const list = document.getElementById('available-fonts-list');
+    list.innerHTML = '<p>Loading fonts...</p>';
+    
+    try {
+        const response = await fetch('/api/fonts?limit=100', {
+            headers: {'Authorization': 'Bearer ' + token}
+        });
+        if (!response.ok) throw new Error('Failed to load');
+        
+        const data = await response.json();
+        allFonts = data.items || [];
+        
+        // Filter out fonts already in collection
+        const currentFontIds = new Set([{% if collection.fonts %}{% for font in collection.fonts %}{{ font.id }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}]);
+        const availableFonts = allFonts.filter(f => !currentFontIds.has(f.id));
+        
+        renderFontList(availableFonts);
+    } catch (err) {
+        list.innerHTML = '<p style="color: #dc3545; padding: 1rem;">Error loading fonts</p>';
+    }
+}
+
+function renderFontList(fonts) {
+    const list = document.getElementById('available-fonts-list');
+    
+    if (fonts.length === 0) {
+        list.innerHTML = '<p style="color: #6c757d; padding: 1rem;">No available fonts to add.</p>';
+        return;
+    }
+    
+    // Group fonts by family
+    const families = {};
+    fonts.forEach(font => {
+        const familyName = font.family_name || 'Unknown';
+        if (!families[familyName]) {
+            families[familyName] = [];
+        }
+        families[familyName].push(font);
+    });
+    
+    // Sort families alphabetically
+    const sortedFamilyNames = Object.keys(families).sort();
+    
+    list.innerHTML = sortedFamilyNames.map((familyName, index) => {
+        const familyFonts = families[familyName];
+        const familyId = 'family-' + index;
+        
+        // Determine format from first font's extension
+        const firstFont = familyFonts[0];
+        let format = 'Unknown';
+        if (firstFont && firstFont.extension) {
+            const ext = firstFont.extension.toLowerCase();
+            if (ext === '.ttf' || ext === '.ttc') format = 'TrueType';
+            else if (ext === '.otf') format = 'OpenType';
+            else format = ext.toUpperCase().replace('.', '');
+        }
+        
+        return `
+            <div class="family-row" data-family-name="${familyName.toLowerCase()}">
+                <div class="family-header" onclick="toggleModalFamily('${familyId}')">
+                    <div class="family-header-left">
+                        <span class="expand-icon" id="icon-${familyId}">▶</span>
+                        <span class="family-name">${familyName}</span>
+                        <span class="family-count">${familyFonts.length} style${familyFonts.length > 1 ? 's' : ''}</span>
+                        <span class="family-format" style="color: #6c757d; font-size: 0.85rem; margin-left: 0.5rem;">${format}</span>
+                    </div>
+                    <div class="family-header-right" onclick="event.stopPropagation();">
+                        <button class="btn add-family-btn" onclick="addFamilyToCollection('${familyName}')">Add All</button>
+                    </div>
+                </div>
+                <div class="family-fonts" id="fonts-${familyId}">
+                    ${familyFonts.map(font => `
+                        <div class="font-item" data-font-id="${font.id}" data-name="${(font.postscript_name || font.style_name || '').toLowerCase()}">
+                            <div class="font-preview-container" style="flex: 1; padding-right: 1rem;">
+                                <div id="modal-preview-${font.id}" class="modal-font-preview" style="font-size: 18px; color: #212529;">
+                                    The quick brown fox jumps over the lazy dog
+                                </div>
+                                <small style="color: #6c757d; display: block; margin-top: 0.25rem;">${font.style_name || 'Regular'}</small>
+                            </div>
+                            <button class="btn add-font-btn" onclick="addFontToCollection(${font.id})">Add</button>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function toggleModalFamily(familyId) {
+    const fontsDiv = document.getElementById('fonts-' + familyId);
+    const icon = document.getElementById('icon-' + familyId);
+    
+    if (fontsDiv.classList.contains('expanded')) {
+        fontsDiv.classList.remove('expanded');
+        icon.classList.remove('expanded');
+        icon.textContent = '▶';
+    } else {
+        fontsDiv.classList.add('expanded');
+        icon.classList.add('expanded');
+        icon.textContent = '▼';
+        // Load font previews when expanded
+        loadModalFontPreviews(fontsDiv);
+    }
+}
+
+async function loadModalFontPreviews(fontsDiv) {
+    const fontItems = fontsDiv.querySelectorAll('.font-item');
+    
+    for (const item of fontItems) {
+        const fontId = item.dataset.fontId;
+        const previewDiv = document.getElementById('modal-preview-' + fontId);
+        
+        if (previewDiv.dataset.loaded) continue;
+        previewDiv.dataset.loaded = 'true';
+        
+        try {
+            // Find font data from allFonts
+            const font = allFonts.find(f => f.id == fontId);
+            if (!font) continue;
+            
+            const ext = font.extension ? font.extension.toLowerCase() : '.ttf';
+            const format = ext === '.otf' ? 'opentype' : 'truetype';
+            
+            // Load the actual font file
+            const fontUrl = '/api/fonts/' + fontId + '/download';
+            const fontUrlWithToken = fontUrl + '?token=' + encodeURIComponent(token);
+            const fontFaceName = 'ModalFont-' + fontId;
+            
+            // Create @font-face rule
+            const style = document.createElement('style');
+            style.textContent = `
+                @font-face {
+                    font-family: '${fontFaceName}';
+                    src: url('${fontUrlWithToken}') format('${format}');
+                }
+            `;
+            document.head.appendChild(style);
+            
+            // Apply font to preview
+            previewDiv.style.fontFamily = `'${fontFaceName}', sans-serif`;
+        } catch (err) {
+            console.error('Font preview error:', err);
+        }
+    }
+}
+
+async function addFamilyToCollection(familyName) {
+    // Find all fonts in this family
+    const familyRow = document.querySelector(`[data-family-name="${familyName.toLowerCase()}"]`);
+    if (!familyRow) return;
+    
+    const fontItems = familyRow.querySelectorAll('.font-item');
+    const fontIds = Array.from(fontItems).map(item => parseInt(item.dataset.fontId));
+    
+    if (fontIds.length === 0) return;
+    
+    // Add all fonts
+    let added = 0;
+    for (const fontId of fontIds) {
+        try {
+        const response = await fetch(`/api/collections/${collectionId}/fonts?font_id=${fontId}`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + token
+                }
+            });
+            if (response.ok) added++;
+        } catch (err) {
+            console.error('Error adding font:', err);
+        }
+    }
+    
+    if (added > 0) {
+        alert(`Added ${added} font${added > 1 ? 's' : ''} from ${familyName}`);
+        location.reload();
+    } else {
+        alert('Failed to add fonts');
+    }
+}
+
+async function addFontToCollection(fontId) {
+    try {
+        const response = await fetch(`/api/collections/${collectionId}/fonts`, {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: `font_id=${fontId}`
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else if (response.status === 401) {
+            location.href = '/ui/login';
+        } else {
+            alert('Failed to add font to collection');
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+async function removeFont(fontId) {
+    if (!confirm('Remove this font from the collection?')) return;
+    
+    try {
+        const response = await fetch(`/api/collections/${collectionId}/fonts/${fontId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': 'Bearer ' + token
+            }
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else if (response.status === 401) {
+            location.href = '/ui/login';
+        } else {
+            alert('Failed to remove font');
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+async function downloadFont(fontId) {
+    const response = await fetch(`/api/fonts/${fontId}/download`, {
+        headers: {'Authorization': 'Bearer ' + token}
+    });
+    
+    if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = '';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+    } else if (response.status === 401) {
+        location.href = '/ui/login';
+    }
+}
+
+async function deleteFont(fontId) {
+    if (!confirm('Delete this font permanently? This cannot be undone.')) return;
+    
+    try {
+        const response = await fetch(`/api/fonts/${fontId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': 'Bearer ' + token
+            }
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else if (response.status === 401) {
+            location.href = '/ui/login';
+        } else if (response.status === 403) {
+            alert('Admin access required');
+        } else {
+            alert('Failed to delete font');
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+// Search filter for modal
+document.getElementById('font-search').addEventListener('input', (e) => {
+    const term = e.target.value.toLowerCase();
+    const modalList = document.getElementById('available-fonts-list');
+    
+    modalList.querySelectorAll('.family-row').forEach(row => {
+        const familyName = row.dataset.familyName || '';
+        const fontItems = row.querySelectorAll('.font-item');
+        let hasMatch = familyName.includes(term);
+        
+        // Check if any font in this family matches
+        fontItems.forEach(item => {
+            const fontName = item.dataset.name || '';
+            if (fontName.includes(term)) {
+                hasMatch = true;
+                item.style.display = 'flex';
+            } else {
+                item.style.display = term ? 'none' : 'flex';
+            }
+        });
+        
+        // Show/hide entire family
+        row.style.display = hasMatch ? 'block' : 'none';
+    });
+});
+</script>
+{% endblock %}

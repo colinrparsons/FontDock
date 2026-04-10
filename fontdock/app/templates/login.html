@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}Login - FontDock{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 400px; margin: 4rem auto;">
+    <h2 style="text-align: center; margin-bottom: 2rem;">FontDock Login</h2>
+    
+    <form id="login-form">
+        <p>
+            <label>Username:</label><br>
+            <input type="text" id="username" class="search-box" required autofocus>
+        </p>
+        <p>
+            <label>Password:</label><br>
+            <input type="password" id="password" class="search-box" required>
+        </p>
+        <p id="error" style="color: #e94560; display: none;"></p>
+        <p>
+            <button type="submit" class="btn" style="width: 100%;">Sign In</button>
+        </p>
+    </form>
+    <p style="text-align: center; color: #666; font-size: 0.9rem;">
+        Default: admin / admin123
+    </p>
+</div>
+
+<script>
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+    const error = document.getElementById('error');
+    
+    const formData = new URLSearchParams();
+    formData.append('username', username);
+    formData.append('password', password);
+    
+    try {
+        const response = await fetch('/auth/login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: formData
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            localStorage.setItem('token', data.access_token);
+            window.location.href = '/ui/fonts';
+        } else {
+            error.textContent = 'Invalid username or password';
+            error.style.display = 'block';
+        }
+    } catch (err) {
+        error.textContent = 'Login failed: ' + err.message;
+        error.style.display = 'block';
+    }
+});
+</script>
+{% endblock %}

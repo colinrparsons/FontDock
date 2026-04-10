@@ -1,0 +1,556 @@
+{% extends "base.html" %}
+
+{% block title %}{{ client.name }} - Fonts{% endblock %}
+
+{% block content %}
+<div class="header">
+    <h1>{{ client.name }} - Fonts ({{ total_fonts }} total)</h1>
+    <div>
+        <a href="/ui/clients" class="btn">Back to Clients</a>
+    </div>
+</div>
+
+<style>
+.family-group {
+    background: #fff;
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    margin-bottom: 0.375rem;
+    overflow: hidden;
+}
+.family-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.4rem 0.75rem;
+    background: #f8f9fa;
+    cursor: pointer;
+    transition: background 0.2s;
+    border-bottom: 1px solid #dee2e6;
+    min-height: 36px;
+    gap: 0.5rem;
+}
+.family-header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 0;
+}
+.family-header-right {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-shrink: 0;
+}
+.family-header > div:last-child {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    justify-content: flex-end;
+}
+.family-header:hover {
+    background: #e9ecef;
+}
+.expand-icon {
+    color: #e94560;
+    font-size: 0.8rem;
+    transition: transform 0.2s;
+}
+.expand-icon.collapsed {
+    transform: rotate(-90deg);
+}
+.family-name {
+    font-weight: bold;
+    color: #212529;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex: 1;
+}
+.family-count {
+    color: #6c757d;
+    font-size: 0.9rem;
+}
+.family-format {
+    color: #6c757d;
+    font-size: 0.9rem;
+    text-align: right;
+}
+.family-styles {
+    background: #fff;
+}
+.style-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.4rem 0.75rem;
+    border-bottom: 1px solid #dee2e6;
+    min-height: 40px;
+}
+.style-row:last-child {
+    border-bottom: none;
+}
+.style-preview {
+    flex: 1;
+    padding-right: 0.75rem;
+    display: flex;
+    align-items: center;
+}
+.style-preview .loading {
+    color: #6c757d;
+    font-size: 0.9rem;
+}
+.style-preview-text {
+    font-size: 20px;
+    color: #212529;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.style-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    min-width: 250px;
+}
+.style-name {
+    color: #495057;
+    font-size: 0.9rem;
+    min-width: 100px;
+}
+.style-format {
+    color: #6c757d;
+    font-size: 0.9rem;
+    min-width: 80px;
+}
+.style-info .btn {
+    font-size: 0.9rem;
+    padding: 0.25rem 0.5rem;
+}
+.hidden {
+    display: none !important;
+}
+.search-box {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    font-size: 1rem;
+    margin-bottom: 1rem;
+}
+.font-list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    border-bottom: 1px solid #eee;
+}
+.font-list-item:last-child {
+    border-bottom: none;
+}
+.font-list-item:hover {
+    background: #f8f9fa;
+}
+.font-list-scroll {
+    max-height: 400px;
+    overflow-y: auto;
+}
+</style>
+
+<h2>Assigned Fonts</h2>
+{% if families %}
+<div id="families-container">
+    {% for family in families %}
+    <div class="family-group">
+        <div class="family-header" onclick="toggleFamily('{{ family.id }}')">
+            <div class="family-header-left">
+                <span id="icon-{{ family.id }}" class="expand-icon collapsed">▼</span>
+                <span class="family-name">{{ family.name }}</span>
+            </div>
+            <div class="family-header-right">
+                <span class="family-count">{{ family.fonts|length }} styles</span>
+                <span class="family-format">{{ family.formats|join(', ') }}</span>
+                <button class="btn" style="background: #dc3545;" onclick="event.stopPropagation(); removeFamilyFromClient('{{ family.id }}', '{{ family.name }}')">Remove All</button>
+            </div>
+        </div>
+        <div id="styles-{{ family.id }}" class="family-styles hidden">
+            {% for font in family.fonts %}
+            <div class="style-row" data-font-id="{{ font.id }}">
+                <div class="style-preview" id="preview-{{ font.id }}">
+                    <span class="loading">Loading preview...</span>
+                </div>
+                <div class="style-info">
+                    <span class="style-name">{{ font.style_name or 'Regular' }}</span>
+                    <span class="style-format">{{ font.extension.upper()[1:] if font.extension else 'Unknown' }}</span>
+                    <button class="btn" style="background: #dc3545;" onclick="removeFontFromClient('{{ font.id }}', '{{ font.postscript_name or font.filename_original }}')">Remove</button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card">
+    <p style="color: #666; text-align: center; padding: 2rem;">No fonts assigned to this client yet.</p>
+</div>
+{% endif %}
+
+<h2>Add Fonts from Library</h2>
+<div class="card">
+    <input type="text" id="font-search" class="search-box" placeholder="Search fonts by name...">
+    <div id="available-fonts-list" class="font-list-scroll">
+        <p style="color: #666;">Loading fonts...</p>
+    </div>
+</div>
+
+<h2>Add Complete Families</h2>
+<div class="card">
+    <div id="available-families-list" class="font-list-scroll">
+        <p style="color: #666;">Loading families...</p>
+    </div>
+</div>
+
+<script>
+const token = localStorage.getItem('token');
+if (!token) {
+    window.location.href = '/ui/login';
+}
+
+const clientId = '{{ client.id }}';
+let allFonts = [];
+
+// Store font data for preview loading
+const fontData = {};
+{% for family in families %}
+{% for font in family.fonts %}
+fontData[{{ font.id }}] = {
+    family: '{{ family.name | replace("'", "\\'") }}',
+    style: '{{ font.style_name | replace("'", "\\'") or "Regular" }}',
+    postscript: '{{ font.postscript_name | replace("'", "\\'") }}'
+};
+{% endfor %}
+{% endfor %}
+
+function toggleFamily(familyId) {
+    const stylesDiv = document.getElementById('styles-' + familyId);
+    const icon = document.getElementById('icon-' + familyId);
+    
+    if (stylesDiv.classList.contains('hidden')) {
+        stylesDiv.classList.remove('hidden');
+        icon.classList.remove('collapsed');
+        loadFamilyPreviews(familyId);
+    } else {
+        stylesDiv.classList.add('hidden');
+        icon.classList.add('collapsed');
+    }
+}
+
+async function loadFamilyPreviews(familyId) {
+    const stylesDiv = document.getElementById('styles-' + familyId);
+    const styleRows = stylesDiv.querySelectorAll('.style-row');
+    
+    for (const row of styleRows) {
+        const fontId = row.dataset.fontId;
+        const previewDiv = document.getElementById('preview-' + fontId);
+        
+        if (previewDiv.dataset.loaded) continue;
+        previewDiv.dataset.loaded = 'true';
+        
+        try {
+            const fontUrl = '/api/fonts/' + fontId + '/download?token=' + encodeURIComponent(token);
+            const fontFaceName = 'Font-' + fontId;
+            
+            const style = document.createElement('style');
+            style.textContent = `@font-face { font-family: '${fontFaceName}'; src: url('${fontUrl}'); }`;
+            document.head.appendChild(style);
+            
+            previewDiv.innerHTML = `<span class="style-preview-text" style="font-family: '${fontFaceName}', sans-serif;">The quick brown fox jumps over the lazy dog</span>`;
+        } catch (err) {
+            previewDiv.innerHTML = '<span class="style-preview-text">The quick brown fox jumps over the lazy dog</span>';
+        }
+    }
+}
+
+async function removeFontFromClient(fontId, fontName) {
+    if (!confirm(`Remove "${fontName}" from this client?`)) return;
+    
+    const response = await fetch('/api/fonts/' + fontId + '/client', {
+        method: 'DELETE',
+        headers: {'Authorization': 'Bearer ' + token}
+    });
+    
+    if (response.ok) {
+        location.reload();
+    } else if (response.status === 401) {
+        location.href = '/ui/login';
+    } else {
+        alert('Failed to remove font from client');
+    }
+}
+
+async function addFontToClient(fontId, fontName) {
+    const response = await fetch('/api/fonts/' + fontId + '/client', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({client_id: clientId})
+    });
+    
+    if (response.ok) {
+        location.reload();
+    } else if (response.status === 401) {
+        location.href = '/ui/login';
+    } else {
+        alert('Failed to add font to client');
+    }
+}
+
+async function removeFamilyFromClient(familyId, familyName) {
+    const stylesDiv = document.getElementById('styles-' + familyId);
+    if (!stylesDiv) return;
+    
+    const rows = stylesDiv.querySelectorAll('.style-row');
+    const fontIds = Array.from(rows).map(row => row.dataset.fontId);
+    
+    if (fontIds.length === 0) return;
+    
+    if (!confirm(`Remove all ${fontIds.length} fonts from "${familyName}" from this client?`)) return;
+    
+    let removed = 0;
+    for (const fontId of fontIds) {
+        const response = await fetch('/api/fonts/' + fontId + '/client', {
+            method: 'DELETE',
+            headers: {'Authorization': 'Bearer ' + token}
+        });
+        if (response.ok) removed++;
+    }
+    
+    location.reload();
+}
+
+async function addFamilyToClient(familyId, familyName) {
+    const response = await fetch('/api/fonts?family_id=' + familyId, {
+        headers: {'Authorization': 'Bearer ' + token}
+    });
+    
+    if (!response.ok) {
+        if (response.status === 401) location.href = '/ui/login';
+        return;
+    }
+    
+    const data = await response.json();
+    const fontIds = (data.items || []).map(f => f.id);
+    
+    if (fontIds.length === 0) {
+        alert('No fonts found in this family');
+        return;
+    }
+    
+    let added = 0;
+    for (const fontId of fontIds) {
+        const addResponse = await fetch('/api/fonts/' + fontId + '/client', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify({client_id: clientId})
+        });
+        if (addResponse.ok) added++;
+    }
+    
+    location.reload();
+}
+
+// Load all available fonts
+async function loadAvailableFonts() {
+    try {
+        const response = await fetch('/api/fonts?page_size=1000', {
+            headers: {'Authorization': 'Bearer ' + token}
+        });
+        
+        if (!response.ok) {
+            if (response.status === 401) location.href = '/ui/login';
+            return;
+        }
+        
+        const data = await response.json();
+        allFonts = data.items || [];
+        
+        // Get existing client font IDs
+        const existingFontIds = new Set(Object.keys(fontData).map(Number));
+        
+        // Filter to only unassigned fonts
+        const availableFonts = allFonts.filter(f => !existingFontIds.has(f.id));
+        
+        displayFontsList(availableFonts);
+        displayFamiliesList(availableFonts);
+    } catch (err) {
+        console.error('Error loading fonts:', err);
+        document.getElementById('available-fonts-list').innerHTML = '<p style="color: #666;">Error loading fonts</p>';
+        document.getElementById('available-families-list').innerHTML = '<p style="color: #666;">Error loading families</p>';
+    }
+}
+
+function displayFontsList(fonts) {
+    const container = document.getElementById('available-fonts-list');
+    
+    if (fonts.length === 0) {
+        container.innerHTML = '<p style="color: #666;">All fonts are already assigned to this client</p>';
+        return;
+    }
+    
+    // Group by family
+    const familyMap = {};
+    fonts.forEach(font => {
+        const familyName = font.family_name || 'Unknown Family';
+        const familyId = font.family_id || 0;
+        if (!familyMap[familyName]) {
+            familyMap[familyName] = { id: familyId, name: familyName, fonts: [] };
+        }
+        familyMap[familyName].fonts.push(font);
+    });
+    
+    const families = Object.values(familyMap).sort((a, b) => a.name.localeCompare(b.name));
+    
+    container.innerHTML = families.map(fam => {
+        const familyId = `avail-${fam.id || fam.name.replace(/\s+/g, '-')}`;
+        return `
+        <div class="family-group" style="margin-bottom: 0.5rem;">
+            <div class="family-header" onclick="toggleAvailableFamily('${familyId}')">
+                <div class="family-header-left">
+                    <span id="icon-${familyId}" class="expand-icon collapsed">▼</span>
+                    <span class="family-name">${fam.name}</span>
+                </div>
+                <div class="family-header-right">
+                    <span class="family-count">${fam.fonts.length} styles</span>
+                    <button class="btn" onclick="event.stopPropagation(); addAvailableFamilyToClient('${fam.id}', '${fam.name.replace(/'/g, "\\'")}')">Add All</button>
+                </div>
+            </div>
+            <div id="styles-${familyId}" class="family-styles hidden">
+                ${fam.fonts.map(font => `
+                <div class="style-row" style="padding: 0.4rem 0.75rem; border-bottom: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center;">
+                    <div style="flex: 1;">
+                        <strong>${font.postscript_name || font.filename_original || 'Unknown'}</strong>
+                    </div>
+                    <button class="btn" onclick="addFontToClient('${font.id}', '${(font.postscript_name || font.filename_original || '').replace(/'/g, "\\'")}')">Add</button>
+                </div>
+                `).join('')}
+            </div>
+        </div>
+        `;
+    }).join('');
+}
+
+function toggleAvailableFamily(familyId) {
+    const stylesDiv = document.getElementById('styles-' + familyId);
+    const icon = document.getElementById('icon-' + familyId);
+    if (stylesDiv) {
+        stylesDiv.classList.toggle('hidden');
+        icon.classList.toggle('collapsed');
+    }
+}
+
+function addAvailableFamilyToClient(familyId, familyName) {
+    if (!familyId || familyId === '0') {
+        alert('Cannot add family: Family ID is not available');
+        return;
+    }
+    if (!confirm(`Add all fonts from "${familyName}" to this client?`)) return;
+    
+    // Find all fonts from this family in allFonts array
+    const familyFonts = allFonts.filter(f => f.family_id == familyId);
+    let added = 0;
+    let failed = 0;
+    
+    Promise.all(familyFonts.map(font => 
+        fetch(`/api/clients/${clientId}/fonts`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify({ font_id: font.id })
+        }).then(r => {
+            if (r.ok) added++;
+            else failed++;
+        }).catch(() => failed++)
+    )).then(() => {
+        if (failed === 0) {
+            alert(`Added ${added} fonts from "${familyName}" to client`);
+        } else {
+            alert(`Added ${added} fonts, ${failed} failed`);
+        }
+        location.reload();
+    });
+}
+
+function displayFamiliesList(fonts) {
+    const container = document.getElementById('available-families-list');
+    
+    // Group by family
+    const familyMap = {};
+    fonts.forEach(font => {
+        const familyName = font.family_name || 'Unknown Family';
+        const familyId = font.family_id || 0;
+        if (!familyMap[familyName]) {
+            familyMap[familyName] = { id: familyId, name: familyName, fonts: [] };
+        }
+        familyMap[familyName].fonts.push(font);
+    });
+    
+    const families = Object.values(familyMap).sort((a, b) => a.name.localeCompare(b.name));
+    
+    if (families.length === 0) {
+        container.innerHTML = '<p style="color: #666;">All families are already assigned to this client</p>';
+        return;
+    }
+    
+    container.innerHTML = families.map(fam => `
+        <div class="family-group" style="margin-bottom: 0.5rem;">
+            <div class="family-header" style="cursor: default;">
+                <div class="family-header-left">
+                    <span style="width: 20px; display: inline-block;"></span>
+                    <span class="family-name">${fam.name}</span>
+                </div>
+                <div class="family-header-right">
+                    <span class="family-count">${fam.fonts.length} styles</span>
+                    <button class="btn" onclick="addAvailableFamilyToClient('${fam.id}', '${fam.name.replace(/'/g, "\\'")}')">Add All</button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Search functionality
+document.getElementById('font-search').addEventListener('input', function(e) {
+    const searchTerm = e.target.value.toLowerCase();
+    const existingFontIds = new Set(Object.keys(fontData).map(Number));
+    let availableFonts = allFonts.filter(f => !existingFontIds.has(f.id));
+    
+    if (searchTerm) {
+        availableFonts = availableFonts.filter(f => {
+            const name = (f.postscript_name || f.filename_original || '').toLowerCase();
+            const family = (f.family_name || '').toLowerCase();
+            return name.includes(searchTerm) || family.includes(searchTerm);
+        });
+    }
+    
+    displayFontsList(availableFonts);
+});
+
+// Load fonts on page load
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM ready, loading fonts...');
+    loadAvailableFonts();
+});
+
+// Auto-expand all families and load previews on page load
+// (Removed - families now default to collapsed)
+</script>
+{% endblock %}

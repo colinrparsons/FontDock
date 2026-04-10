@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Font - FontDock{% endblock %}
+
+{% block content %}
+<script>
+const token = localStorage.getItem('token');
+if (!token) {
+    window.location.href = '/ui/login';
+}
+</script>
+
+<h2>Upload Font</h2>
+
+<div class="card">
+    <form id="upload-form">
+        <p>
+            <label>Font Files (OTF, TTF, TTC):</label><br>
+            <input type="file" id="file" name="file" accept=".otf,.ttf,.ttc" multiple required>
+            <small style="color: #666;">Hold Ctrl/Cmd to select multiple files</small>
+        </p>
+        <p>
+            <label>Client:</label><br>
+            <select id="client_select" class="search-box" style="width: 100%;" onchange="loadCollections()">
+                <option value="">Select a client (optional)</option>
+                {% for client in clients %}
+                <option value="{{ client.id }}">{{ client.name }}</option>
+                {% endfor %}
+            </select>
+        </p>
+        <p>
+            <label>Collection:</label><br>
+            <select id="collection_select" class="search-box" style="width: 100%;">
+                <option value="">Select a collection (optional)</option>
+            </select>
+        </p>
+        <p>
+            <button type="submit" class="btn">Upload Fonts</button>
+        </p>
+    </form>
+    
+    <div id="progress" style="display: none;">
+        <p id="progress-text">Uploading...</p>
+        <div id="progress-list"></div>
+    </div>
+    
+    <div id="result" style="display: none;">
+        <h3>Results</h3>
+        <div id="result-list"></div>
+    </div>
+</div>
+
+<script>
+const collectionsByClient = JSON.parse('{{ collections_by_client | tojson | safe }}');
+
+function loadCollections() {
+    const clientId = document.getElementById('client_select').value;
+    const collectionSelect = document.getElementById('collection_select');
+    
+    collectionSelect.innerHTML = '<option value="">Select a collection (optional)</option>';
+    
+    if (clientId && collectionsByClient[clientId]) {
+        collectionsByClient[clientId].forEach(collection => {
+            const option = document.createElement('option');
+            option.value = collection.id;
+            option.textContent = collection.name;
+            collectionSelect.appendChild(option);
+        });
+    }
+}
+
+document.getElementById('upload-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const token = localStorage.getItem('token');
+    if (!token) {
+        window.location.href = '/ui/login';
+        return;
+    }
+    
+    const fileInput = document.getElementById('file');
+    const collectionId = document.getElementById('collection_select').value;
+    const progress = document.getElementById('progress');
+    const progressText = document.getElementById('progress-text');
+    const progressList = document.getElementById('progress-list');
+    const result = document.getElementById('result');
+    const resultList = document.getElementById('result-list');
+    
+    const files = Array.from(fileInput.files);
+    if (files.length === 0) {
+        alert('Please select at least one file');
+        return;
+    }
+    
+    progress.style.display = 'block';
+    result.style.display = 'none';
+    progressList.innerHTML = '';
+    resultList.innerHTML = '';
+    
+    const results = [];
+    
+    const clientId = document.getElementById('client_select').value;
+    
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        progressText.textContent = 'Uploading ' + (i + 1) + ' of ' + files.length + ': ' + file.name;
+        
+        const formData = new FormData();
+        formData.append('file', file);
+        if (clientId) {
+            formData.append('client_id', clientId);
+        }
+        if (collectionId) {
+            formData.append('collection_ids', collectionId);
+        }
+        
+        try {
+            const response = await fetch('/api/fonts/upload', {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + token
+                },
+                body: formData
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok && data.success) {
+                results.push({
+                    file: file.name,
+                    status: 'success',
+                    message: data.message || 'Upload successful!',
+                    fontId: data.font_id
+                });
+            } else {
+                results.push({
+                    file: file.name,
+                    status: 'error',
+                    message: data.detail || data.message || 'Upload failed'
+                });
+            }
+        } catch (err) {
+            results.push({
+                file: file.name,
+                status: 'error',
+                message: err.message
+            });
+        }
+        
+        // Update progress list
+        const div = document.createElement('div');
+        div.textContent = file.name + ': ' + (results[results.length - 1].status === 'success' ? 'done' : 'failed');
+        div.style.color = results[results.length - 1].status === 'success' ? 'green' : '#e94560';
+        progressList.appendChild(div);
+    }
+    
+    progress.style.display = 'none';
+    result.style.display = 'block';
+    
+    // Show results
+    let successCount = 0;
+    let errorCount = 0;
+    results.forEach(r => {
+        if (r.status === 'success') successCount++;
+        else errorCount++;
+        
+        const div = document.createElement('div');
+        div.style.marginBottom = '0.5rem';
+        div.style.padding = '0.5rem';
+        div.style.background = r.status === 'success' ? '#1a5c3a' : '#5c1a3a';
+        div.style.borderRadius = '4px';
+        div.innerHTML = '<strong>' + r.file + '</strong>: <span style="color: ' + (r.status === 'success' ? '#4ade80' : '#f87171') + '">' + r.message + '</span>';
+        resultList.appendChild(div);
+    });
+    
+    const summary = document.createElement('div');
+    summary.style.marginTop = '1rem';
+    summary.style.fontWeight = 'bold';
+    summary.innerHTML = 'Uploaded: <span style="color: #4ade80;">' + successCount + '</span> | Failed: <span style="color: #f87171;">' + errorCount + '</span>';
+    resultList.insertBefore(summary, resultList.firstChild);
+    
+    if (successCount > 0) {
+        document.getElementById('upload-form').reset();
+    }
+});
+</script>
+{% endblock %}

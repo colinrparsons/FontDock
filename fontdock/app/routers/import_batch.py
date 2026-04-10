@@ -1,0 +1,333 @@
+"""Batch import router for bulk font ingestion from folder structures."""
+import os
+import hashlib
+import shutil
+import logging
+from datetime import datetime
+from pathlib import Path
+from typing import List, Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, UploadFile, File
+from sqlalchemy.orm import Session
+
+from app.db import get_db
+from app.routers.auth import get_current_admin
+from app.models import User, Font as FontModel, FontFamily, Client
+from app.services.font_ingest_service import extract_font_metadata
+
+router = APIRouter(prefix="/api/import", tags=["import"])
+logger = logging.getLogger(__name__)
+
+
+def calculate_file_hash(filepath: str) -> str:
+    """Calculate SHA256 hash of file."""
+    sha256 = hashlib.sha256()
+    with open(filepath, 'rb') as f:
+        for chunk in iter(lambda: f.read(8192), b''):
+            sha256.update(chunk)
+    return sha256.hexdigest()
+
+
+def find_font_files(folder_path: str) -> List[Dict[str, Any]]:
+    """Recursively find all font files in folder."""
+    font_extensions = {'.ttf', '.otf', '.ttc', '.woff', '.woff2'}
+    fonts = []
+    
+    for root, dirs, files in os.walk(folder_path):
+        for file in files:
+            ext = os.path.splitext(file)[1].lower()
+            if ext in font_extensions:
+                filepath = os.path.join(root, file)
+                # Determine client from folder structure
+                rel_path = os.path.relpath(filepath, folder_path)
+                path_parts = rel_path.split(os.sep)
+                
+                # First folder level is client name
+                client_name = path_parts[0] if len(path_parts) > 1 else 'General'
+                
+                fonts.append({
+                    'path': filepath,
+                    'filename': file,
+                    'client_name': client_name,
+                    'extension': ext
+                })
+    
+    return fonts
+
+
+@router.post("/batch-folder")
+async def batch_import_from_folder(
+    folder_path: str,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Batch import fonts from a folder structure.
+    
+    Expected structure:
+    /folder_path/
+      Client1/
+        font1.ttf
+        font2.otf
+      Client2/
+        font3.ttf
+    
+    Creates clients automatically, processes fonts, handles duplicates.
+    """
+    if not os.path.exists(folder_path):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Folder not found: {folder_path}"
+        )
+    
+    # Find all font files
+    font_files = find_font_files(folder_path)
+    logger.info(f"[BATCH IMPORT] Found {len(font_files)} font files in {folder_path}")
+    for f in font_files[:5]:  # Log first 5 for debugging
+        logger.info(f"[BATCH IMPORT] File: {f['path']} -> Client: {f['client_name']}")
+    
+    if not font_files:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No font files found in folder"
+        )
+    
+    results = {
+        'total': len(font_files),
+        'imported': 0,
+        'updated': 0,
+        'failed': 0,
+        'clients_created': [],
+        'errors': []
+    }
+    
+    # Get or create clients
+    clients_cache = {}
+    
+    for font_info in font_files:
+        try:
+            client_name = font_info['client_name']
+            
+            # Get or create client
+            if client_name not in clients_cache:
+                client = db.query(Client).filter(Client.name == client_name).first()
+                if not client:
+                    # Generate code from name (slugify)
+                    client_code = client_name.lower().replace(' ', '-').replace('_', '-')
+                    # Check if code exists, append number if needed
+                    base_code = client_code
+                    counter = 1
+                    while db.query(Client).filter(Client.code == client_code).first():
+                        client_code = f"{base_code}-{counter}"
+                        counter += 1
+                    
+                    client = Client(
+                        name=client_name,
+                        code=client_code,
+                        is_active=True
+                    )
+                    db.add(client)
+                    db.commit()
+                    db.refresh(client)
+                    results['clients_created'].append(client_name)
+                clients_cache[client_name] = client
+            
+            client = clients_cache[client_name]
+            
+            # Calculate file hash
+            file_hash = calculate_file_hash(font_info['path'])
+            
+            # Check for duplicate by hash
+            existing_font = db.query(FontModel).filter(FontModel.file_hash_sha256 == file_hash).first()
+            
+            if existing_font:
+                # Update existing font file
+                existing_font.updated_at = datetime.utcnow()
+                
+                # Copy new file over old one
+                storage_path = f"fontdock/storage/fonts/{existing_font.id}{existing_font.extension}"
+                shutil.copy2(font_info['path'], storage_path)
+                
+                results['updated'] += 1
+            else:
+                # Extract metadata
+                metadata = extract_font_metadata(font_info['path'])
+                
+                # Get or create font family
+                family_name = metadata.get('typographic_family') or metadata.get('family_name')
+                if not family_name:
+                    # Try to get family name from parent folder (client name is folder name)
+                    family_name = client.name  # Use client name as fallback for family grouping
+                if not family_name:
+                    family_name = os.path.splitext(font_info['filename'])[0]
+                
+                # Log for debugging
+                if not metadata.get('typographic_family') and not metadata.get('family_name'):
+                    logger.warning(f"Font {font_info['filename']} has no family metadata in name tables, using: {family_name}")
+                
+                family = db.query(FontFamily).filter(FontFamily.name == family_name).first()
+                if not family:
+                    family = FontFamily(
+                        name=family_name,
+                        foundry=metadata.get('manufacturer'),
+                        notes=metadata.get('description')
+                    )
+                    db.add(family)
+                    db.commit()
+                    db.refresh(family)
+                
+                # Create font record (no client_id, use many-to-many)
+                temp_storage_path = f"pending/{font_info['filename']}"
+                font = FontModel(
+                    family_id=family.id,
+                    filename_original=font_info['filename'],
+                    filename_storage=font_info['filename'],
+                    storage_path=temp_storage_path,
+                    style_name=metadata.get('style_name'),
+                    postscript_name=metadata.get('postscript_name'),
+                    extension=font_info['extension'],
+                    file_hash_sha256=file_hash,
+                    file_size_bytes=os.path.getsize(font_info['path']),
+                    version_string=metadata.get('version'),
+                    is_active=True
+                )
+                db.add(font)
+                db.commit()
+                db.refresh(font)
+                
+                # Assign font to client using many-to-many relationship
+                if font not in client.fonts:
+                    client.fonts.append(font)
+                    db.commit()
+                
+                # Copy file to storage with correct path
+                storage_dir = Path("fontdock/storage/fonts")
+                storage_dir.mkdir(parents=True, exist_ok=True)
+                final_storage_path = storage_dir / f"{font.id}{font.extension}"
+                shutil.copy2(font_info['path'], final_storage_path)
+                
+                # Update font with correct storage path
+                font.storage_path = str(final_storage_path)
+                db.commit()
+                
+                results['imported'] += 1
+                
+        except Exception as e:
+            results['failed'] += 1
+            results['errors'].append(f"{font_info['filename']}: {str(e)}")
+    
+    return {
+        'success': True,
+        'message': f"Batch import complete: {results['imported']} imported, {results['updated']} updated, {results['failed']} failed",
+        'clients_created': results['clients_created'],
+        'errors': results['errors'],
+        'results': results
+    }
+
+
+@router.post("/upload-zip")
+async def batch_import_from_zip(
+    file: UploadFile,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Upload and import fonts from a ZIP file with folder structure."""
+    import zipfile
+    import tempfile
+    
+    if not file.filename.endswith('.zip'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only ZIP files are supported"
+        )
+    
+    # Save and extract ZIP
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zip_path = os.path.join(tmpdir, "upload.zip")
+        
+        with open(zip_path, 'wb') as f:
+            content = await file.read()
+            f.write(content)
+        
+        # Extract
+        extract_dir = os.path.join(tmpdir, "extracted")
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_dir)
+        
+        # Process as folder import
+        return await batch_import_from_folder(
+            folder_path=extract_dir,
+            background_tasks=background_tasks,
+            current_user=current_user,
+            db=db
+        )
+
+
+@router.get("/browse")
+async def browse_folders(
+    path: str = "",
+    current_user: User = Depends(get_current_admin),
+):
+    """Browse server folders for import selection."""
+    import glob
+    
+    # Default to home directory if no path provided
+    if not path:
+        path = os.path.expanduser("~")
+    
+    # Security: prevent traversal outside reasonable bounds
+    if ".." in path or path.startswith("/"):
+        # Normalize and check
+        real_path = os.path.realpath(path)
+        home = os.path.realpath(os.path.expanduser("~"))
+        if not real_path.startswith(home) and not real_path.startswith("/Users") and not real_path.startswith("/home"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot access this directory"
+            )
+    
+    if not os.path.exists(path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Path not found: {path}"
+        )
+    
+    if not os.path.isdir(path):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Not a directory: {path}"
+        )
+    
+    try:
+        items = os.listdir(path)
+    except PermissionError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied"
+        )
+    
+    folders = []
+    for item in sorted(items):
+        full_path = os.path.join(path, item)
+        if os.path.isdir(full_path):
+            folders.append({
+                "name": item,
+                "path": full_path,
+            })
+    
+    return {
+        "current_path": path,
+        "parent_path": os.path.dirname(path) if path != os.path.dirname(path) else None,
+        "folders": folders
+    }
+
+
+@router.get("/status/{task_id}")
+async def get_import_status(
+    task_id: str,
+    current_user: User = Depends(get_current_admin),
+):
+    """Get status of background import task."""
+    # TODO: Implement background task tracking
+    return {'task_id': task_id, 'status': 'pending'}

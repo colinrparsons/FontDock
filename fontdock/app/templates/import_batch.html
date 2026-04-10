@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+
+{% block title %}Batch Import - FontDock{% endblock %}
+
+{% block content %}
+<script>
+const token = localStorage.getItem('token');
+if (!token) {
+    window.location.href = '/ui/login';
+}
+</script>
+
+<h2>Batch Import Fonts</h2>
+
+<div class="card">
+    <h3>Import from Server Folder</h3>
+    <p style="color: #6c757d; margin-bottom: 1rem;">
+        Import fonts from a folder structure on the server. Expected structure:
+    </p>
+    <pre style="background: #f8f9fa; padding: 1rem; border-radius: 4px; font-size: 0.85rem; margin-bottom: 1rem; overflow-x: auto;">/path/to/fonts/
+  Client1/
+    font1.ttf
+    font2.otf
+  Client2/
+    font3.ttf
+    font4.otf</pre>
+    
+    <div style="display: flex; gap: 1rem; align-items: flex-end;">
+        <div style="flex: 1;">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Selected Folder</label>
+            <input type="text" id="folder-path" class="search-box" placeholder="Click Browse to select folder..." style="width: 100%;" readonly>
+        </div>
+        <button class="btn" onclick="openFolderBrowser()">Browse...</button>
+        <button class="btn" onclick="startImport()">Start Import</button>
+    </div>
+    
+    <div id="import-results" style="margin-top: 1.5rem; display: none;">
+        <h4 style="margin-bottom: 0.75rem;">Import Results</h4>
+        <div id="results-content"></div>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Import from ZIP File</h3>
+    <p style="color: #6c757d; margin-bottom: 1rem;">
+        Upload a ZIP file containing fonts organized by client folders.
+    </p>
+    
+    <div style="display: flex; gap: 1rem; align-items: flex-end;">
+        <div style="flex: 1;">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">ZIP File</label>
+            <input type="file" id="zip-file" accept=".zip" style="width: 100%; padding: 0.5rem; border: 1px solid #dee2e6; border-radius: 4px;">
+        </div>
+        <button class="btn" onclick="uploadZip()">Upload & Import</button>
+    </div>
+    
+    <div id="upload-results" style="margin-top: 1.5rem; display: none;">
+        <h4 style="margin-bottom: 0.75rem;">Upload Results</h4>
+        <div id="upload-content"></div>
+    </div>
+</div>
+
+<div class="card">
+    <h3>How It Works</h3>
+    <ul style="color: #495057; line-height: 1.6;">
+        <li><strong>Client Creation:</strong> Folders become clients automatically. "Client1" folder = "Client1" client.</li>
+        <li><strong>Duplicate Detection:</strong> Fonts are checked by file hash (SHA256). Duplicates are updated, not re-added.</li>
+        <li><strong>Metadata Extraction:</strong> Font names, styles, and family info extracted automatically.</li>
+        <li><strong>Recursive:</strong> All subfolders are scanned for font files (.ttf, .otf, .ttc, .woff, .woff2).</li>
+        <li><strong>Client Assignment:</strong> Fonts are tagged with their client for filtering and collections.</li>
+    </ul>
+</div>
+
+<script>
+async function startImport() {
+    const folderPath = document.getElementById('folder-path').value.trim();
+    
+    if (!folderPath) {
+        alert('Please enter a folder path');
+        return;
+    }
+    
+    const resultsDiv = document.getElementById('import-results');
+    const contentDiv = document.getElementById('results-content');
+    
+    resultsDiv.style.display = 'block';
+    contentDiv.innerHTML = '<p style="color: #6c757d;">Importing fonts... this may take a while.</p>';
+    
+    try {
+        const response = await fetch('/api/import/batch-folder?folder_path=' + encodeURIComponent(folderPath), {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + token
+            }
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            
+            let html = `
+                <div style="background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+                    <strong>${data.message}</strong>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+                    <div style="background: #f8f9fa; padding: 1rem; border-radius: 4px; text-align: center;">
+                        <div style="font-size: 2rem; color: #e94560; font-weight: bold;">${data.results.total}</div>
+                        <div style="color: #6c757d; font-size: 0.85rem;">Total Fonts</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 1rem; border-radius: 4px; text-align: center;">
+                        <div style="font-size: 2rem; color: #28a745; font-weight: bold;">${data.results.imported}</div>
+                        <div style="color: #6c757d; font-size: 0.85rem;">Imported</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 1rem; border-radius: 4px; text-align: center;">
+                        <div style="font-size: 2rem; color: #17a2b8; font-weight: bold;">${data.results.updated}</div>
+                        <div style="color: #6c757d; font-size: 0.85rem;">Updated</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 1rem; border-radius: 4px; text-align: center;">
+                        <div style="font-size: 2rem; color: #dc3545; font-weight: bold;">${data.results.failed}</div>
+                        <div style="color: #6c757d; font-size: 0.85rem;">Failed</div>
+                    </div>
+                </div>
+            `;
+            
+            if (data.results.clients_created.length > 0) {
+                html += `
+                    <div style="margin-bottom: 1rem;">
+                        <strong>Clients Created:</strong> ${data.results.clients_created.join(', ')}
+                    </div>
+                `;
+            }
+            
+            if (data.results.errors.length > 0) {
+                html += `
+                    <div style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 1rem; border-radius: 4px;">
+                        <strong>Errors:</strong>
+                        <ul style="margin: 0.5rem 0 0 1rem; font-size: 0.85rem;">
+                            ${data.results.errors.map(e => `<li>${e}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
+            
+            contentDiv.innerHTML = html;
+        } else if (response.status === 401) {
+            location.href = '/ui/login';
+        } else {
+            const error = await response.json();
+            contentDiv.innerHTML = `<div style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 1rem; border-radius: 4px;">Error: ${error.detail}</div>`;
+        }
+    } catch (err) {
+        contentDiv.innerHTML = `<div style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 1rem; border-radius: 4px;">Error: ${err.message}</div>`;
+    }
+}
+
+async function uploadZip() {
+    const fileInput = document.getElementById('zip-file');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        alert('Please select a ZIP file');
+        return;
+    }
+    
+    const resultsDiv = document.getElementById('upload-results');
+    const contentDiv = document.getElementById('upload-content');
+    
+    resultsDiv.style.display = 'block';
+    contentDiv.innerHTML = '<p style="color: #6c757d;">Uploading and importing... this may take a while.</p>';
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+        const response = await fetch('/api/import/upload-zip', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + token
+            },
+            body: formData
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            contentDiv.innerHTML = `<div style="background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 1rem; border-radius: 4px;"><strong>${data.message}</strong></div>`;
+        } else if (response.status === 401) {
+            location.href = '/ui/login';
+        } else {
+            const error = await response.json();
+            contentDiv.innerHTML = `<div style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 1rem; border-radius: 4px;">Error: ${error.detail}</div>`;
+        }
+    } catch (err) {
+        contentDiv.innerHTML = `<div style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 1rem; border-radius: 4px;">Error: ${err.message}</div>`;
+    }
+}
+
+// Folder Browser Modal
+let currentBrowsePath = '';
+
+function openFolderBrowser() {
+    document.getElementById('folder-modal').style.display = 'block';
+    loadFolderList('');
+}
+
+function closeFolderBrowser() {
+    document.getElementById('folder-modal').style.display = 'none';
+}
+
+async function loadFolderList(path) {
+    try {
+        const response = await fetch('/api/import/browse?path=' + encodeURIComponent(path), {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        
+        if (!response.ok) {
+            if (response.status === 401) {
+                location.href = '/ui/login';
+                return;
+            }
+            throw new Error('Failed to load folders');
+        }
+        
+        const data = await response.json();
+        currentBrowsePath = data.current_path;
+        
+        document.getElementById('current-path').textContent = data.current_path;
+        
+        let html = '';
+        
+        // Parent folder link
+        if (data.parent_path) {
+            html += `<div class="folder-item" onclick="loadFolderList('${data.parent_path}')">
+                <span style="color: #00bcd4;">&#8593;</span> ..
+            </div>`;
+        }
+        
+        // Folder list
+        data.folders.forEach(folder => {
+            html += `<div class="folder-item" onclick="loadFolderList('${folder.path}')">
+                <span style="color: #ffc107;">&#128193;</span> ${folder.name}
+            </div>`;
+        });
+        
+        if (data.folders.length === 0 && !data.parent_path) {
+            html = '<p style="color: #6c757d; padding: 1rem;">No folders found in this directory.</p>';
+        }
+        
+        document.getElementById('folder-list').innerHTML = html;
+    } catch (err) {
+        document.getElementById('folder-list').innerHTML = `<p style="color: #dc3545; padding: 1rem;">Error: ${err.message}</p>`;
+    }
+}
+
+function selectCurrentFolder() {
+    document.getElementById('folder-path').value = currentBrowsePath;
+    closeFolderBrowser();
+}
+</script>
+
+<!-- Folder Browser Modal -->
+<div id="folder-modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5);">
+    <div style="background: white; margin: 5% auto; padding: 1.5rem; border-radius: 8px; width: 500px; max-height: 80vh; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3 style="margin: 0;">Select Folder</h3>
+            <button onclick="closeFolderBrowser()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">&times;</button>
+        </div>
+        <div style="background: #f8f9fa; padding: 0.5rem 1rem; border-radius: 4px; margin-bottom: 1rem; font-family: monospace; font-size: 0.85rem; word-break: break-all;" id="current-path">/</div>
+        <div id="folder-list" style="flex: 1; overflow-y: auto; max-height: 400px; border: 1px solid #ddd; border-radius: 4px;">
+            <p style="color: #6c757d; padding: 1rem;">Loading...</p>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;">
+            <button class="btn" style="background: #6c757d;" onclick="closeFolderBrowser()">Cancel</button>
+            <button class="btn" onclick="selectCurrentFolder()">Select This Folder</button>
+        </div>
+    </div>
+</div>
+<style>
+    .folder-item {
+        padding: 0.75rem 1rem;
+        cursor: pointer;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .folder-item:hover {
+        background: #f8f9fa;
+    }
+</style>
+{% endblock %}

@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% block title %}Collections - FontDock{% endblock %}
+
+{% block content %}
+<script>
+const token = localStorage.getItem('token');
+if (!token) {
+    window.location.href = '/ui/login';
+}
+</script>
+
+<h2>Collections</h2>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <input type="text" class="search-box" placeholder="Search collections..." id="search" style="margin: 0; flex: 1; margin-right: 1rem;">
+        <button class="btn" onclick="showCreateModal()">+ New Collection</button>
+    </div>
+    
+    {% if collections %}
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Client</th>
+                <th>Fonts</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for collection in collections %}
+            <tr>
+                <td>{{ collection.name }}</td>
+                <td>{{ collection.client.name if collection.client else 'Global' }}</td>
+                <td>{{ collection.fonts|length if collection.fonts else 0 }}</td>
+                <td>{% if collection.is_active %}Active{% else %}Inactive{% endif %}</td>
+                <td>
+                    <a href="/ui/collections/{{ collection.id }}" class="btn">View</a>
+                    <button class="btn" onclick="showEditModal('{{ collection.id }}', '{{ collection.name | replace("'", "&#39;") }}', '{{ collection.client_id if collection.client_id else '' }}')">Edit</button>
+                    <button class="btn" style="background: #dc3545;" onclick="deleteCollection('{{ collection.id }}', '{{ collection.name | replace("'", "&#39;") }}')">Delete</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #666; text-align: center; padding: 2rem;">No collections found. Create your first collection.</p>
+    {% endif %}
+</div>
+
+<!-- Create Collection Modal -->
+<div id="createModal" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);">
+    <div class="modal-content" style="background-color: #fefefe; margin: 10% auto; padding: 20px; border-radius: 8px; width: 400px; max-width: 90%;">
+        <h3>Create New Collection</h3>
+        <div style="margin-bottom: 1rem;">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Collection Name</label>
+            <input type="text" id="newCollectionName" class="search-box" style="width: 100%;" placeholder="Enter collection name">
+        </div>
+        <div style="margin-bottom: 1.5rem;">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Client (Optional)</label>
+            <select id="newCollectionClient" class="search-box" style="width: 100%;">
+                <option value="">-- No Client (Global) --</option>
+                {% for client in clients %}
+                <option value="{{ client.id }}">{{ client.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+            <button class="btn" style="background: #6c757d;" onclick="closeCreateModal()">Cancel</button>
+            <button class="btn" onclick="createCollection()">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Collection Modal -->
+<div id="editModal" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);">
+    <div class="modal-content" style="background-color: #fefefe; margin: 10% auto; padding: 20px; border-radius: 8px; width: 400px; max-width: 90%;">
+        <h3>Edit Collection</h3>
+        <input type="hidden" id="editCollectionId">
+        <div style="margin-bottom: 1rem;">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Collection Name</label>
+            <input type="text" id="editCollectionName" class="search-box" style="width: 100%;">
+        </div>
+        <div style="margin-bottom: 1.5rem;">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Client (Optional)</label>
+            <select id="editCollectionClient" class="search-box" style="width: 100%;">
+                <option value="">-- No Client (Global) --</option>
+                {% for client in clients %}
+                <option value="{{ client.id }}">{{ client.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+            <button class="btn" style="background: #6c757d;" onclick="closeEditModal()">Cancel</button>
+            <button class="btn" onclick="updateCollection()">Save</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function showCreateModal() {
+    document.getElementById('createModal').style.display = 'block';
+    document.getElementById('newCollectionName').value = '';
+    document.getElementById('newCollectionClient').value = '';
+}
+
+function closeCreateModal() {
+    document.getElementById('createModal').style.display = 'none';
+}
+
+function createCollection() {
+    const name = document.getElementById('newCollectionName').value.trim();
+    const clientId = document.getElementById('newCollectionClient').value;
+    
+    if (!name) {
+        alert('Please enter a collection name');
+        return;
+    }
+    
+    const body = {name: name};
+    if (clientId) {
+        body.client_id = parseInt(clientId);
+    }
+    
+    fetch('/api/collections', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(body)
+    }).then(r => {
+        if (r.ok) location.reload();
+        else if (r.status === 401) location.href = '/ui/login';
+        else alert('Failed to create collection');
+    });
+}
+
+function showEditModal(id, name, clientId) {
+    document.getElementById('editModal').style.display = 'block';
+    document.getElementById('editCollectionId').value = id;
+    document.getElementById('editCollectionName').value = name;
+    document.getElementById('editCollectionClient').value = clientId || '';
+}
+
+function closeEditModal() {
+    document.getElementById('editModal').style.display = 'none';
+}
+
+function updateCollection() {
+    const id = document.getElementById('editCollectionId').value;
+    const name = document.getElementById('editCollectionName').value.trim();
+    const clientId = document.getElementById('editCollectionClient').value;
+    
+    if (!name) {
+        alert('Please enter a collection name');
+        return;
+    }
+    
+    const body = {name: name};
+    if (clientId) {
+        body.client_id = parseInt(clientId);
+    } else {
+        body.client_id = null;
+    }
+    
+    fetch(`/api/collections/${id}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(body)
+    }).then(r => {
+        if (r.ok) location.reload();
+        else if (r.status === 401) location.href = '/ui/login';
+        else alert('Failed to update collection');
+    });
+}
+
+function removeFromClient(id) {
+    if (!confirm('Remove this collection from its client?')) return;
+    
+    fetch(`/api/collections/${id}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({client_id: null})
+    }).then(r => {
+        if (r.ok) location.reload();
+        else if (r.status === 401) location.href = '/ui/login';
+        else alert('Failed to remove collection from client');
+    });
+}
+
+function deleteCollection(id, name) {
+    if (!confirm(`Delete collection "${name}"? All fonts will be removed from this collection.`)) return;
+    
+    fetch(`/api/collections/${id}`, {
+        method: 'DELETE',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    }).then(r => {
+        if (r.ok) location.reload();
+        else if (r.status === 401) location.href = '/ui/login';
+        else r.json().then(data => alert('Failed to delete collection: ' + (data.detail || 'Unknown error')));
+    });
+}
+
+// Close modal when clicking outside
+window.onclick = function(event) {
+    if (event.target.classList.contains('modal')) {
+        event.target.style.display = 'none';
+    }
+}
+</script>
+{% endblock %}

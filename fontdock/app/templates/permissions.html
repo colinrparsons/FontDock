@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Permissions - FontDock{% endblock %}
+
+{% block content %}
+<script>
+const token = localStorage.getItem('token');
+if (!token) {
+    window.location.href = '/ui/login';
+}
+</script>
+
+<h2>Admin Permissions</h2>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <input type="text" class="search-box" placeholder="Search users..." id="search" style="margin: 0; flex: 1; margin-right: 1rem;">
+    </div>
+    
+    <p style="color: #a0a0a0; margin-bottom: 1rem;">
+        Manage granular permissions for each user. Admin users automatically have all permissions.
+    </p>
+    
+    {% if users %}
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>User</th>
+                    <th>Admin</th>
+                    <th>Create Users</th>
+                    <th>Delete Users</th>
+                    <th>Upload</th>
+                    <th>Delete Fonts</th>
+                    <th>Download</th>
+                    <th>Collections</th>
+                    <th>Clients</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr data-username="{{ user.username }}">
+                    <td>
+                        <strong>{{ user.username }}</strong><br>
+                        <small style="color: #666;">{{ user.first_name or '' }} {{ user.last_name or '' }}</small>
+                    </td>
+                    <td>
+                        <input type="checkbox" class="perm-check" data-user="{{ user.id }}" data-perm="is_admin" {% if user.is_admin %}checked{% endif %}>
+                    </td>
+                    <td>
+                        <input type="checkbox" class="perm-check" data-user="{{ user.id }}" data-perm="can_create_users" {% if user.can_create_users %}checked{% endif %} {% if user.is_admin %}disabled{% endif %}>
+                    </td>
+                    <td>
+                        <input type="checkbox" class="perm-check" data-user="{{ user.id }}" data-perm="can_delete_users" {% if user.can_delete_users %}checked{% endif %} {% if user.is_admin %}disabled{% endif %}>
+                    </td>
+                    <td>
+                        <input type="checkbox" class="perm-check" data-user="{{ user.id }}" data-perm="can_upload_fonts" {% if user.can_upload_fonts %}checked{% endif %} {% if user.is_admin %}disabled{% endif %}>
+                    </td>
+                    <td>
+                        <input type="checkbox" class="perm-check" data-user="{{ user.id }}" data-perm="can_delete_fonts" {% if user.can_delete_fonts %}checked{% endif %} {% if user.is_admin %}disabled{% endif %}>
+                    </td>
+                    <td>
+                        <input type="checkbox" class="perm-check" data-user="{{ user.id }}" data-perm="can_download_fonts" {% if user.can_download_fonts %}checked{% endif %} {% if user.is_admin %}disabled{% endif %}>
+                    </td>
+                    <td>
+                        <input type="checkbox" class="perm-check" data-user="{{ user.id }}" data-perm="can_create_collections" {% if user.can_create_collections %}checked{% endif %} {% if user.is_admin %}disabled{% endif %}>
+                    </td>
+                    <td>
+                        <input type="checkbox" class="perm-check" data-user="{{ user.id }}" data-perm="can_create_clients" {% if user.can_create_clients %}checked{% endif %} {% if user.is_admin %}disabled{% endif %}>
+                    </td>
+                    <td>
+                        <button class="btn save-perms" data-user="{{ user.id }}" style="font-size: 0.8rem; padding: 0.25rem 0.5rem;">Save</button>
+                        <span class="save-status" id="status-{{ user.id }}"></span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p style="color: #666; text-align: center; padding: 2rem;">No users found.</p>
+    {% endif %}
+</div>
+
+<style>
+.perm-check {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+}
+.perm-check:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.save-status {
+    font-size: 0.8rem;
+    margin-left: 0.5rem;
+}
+.save-status.success { color: #4ade80; }
+.save-status.error { color: #f87171; }
+</style>
+
+<script>
+// Handle permission changes
+document.querySelectorAll('.perm-check[data-perm="is_admin"]').forEach(checkbox => {
+    checkbox.addEventListener('change', function() {
+        const userId = this.dataset.user;
+        const isAdmin = this.checked;
+        const row = this.closest('tr');
+        
+        // Enable/disable other checkboxes based on admin status
+        row.querySelectorAll('.perm-check:not([data-perm="is_admin"])').forEach(perm => {
+            perm.disabled = isAdmin;
+            if (isAdmin) {
+                perm.checked = true;
+            }
+        });
+    });
+});
+
+// Handle save button clicks
+document.querySelectorAll('.save-perms').forEach(btn => {
+    btn.addEventListener('click', async function() {
+        const userId = this.dataset.user;
+        const statusSpan = document.getElementById('status-' + userId);
+        const row = this.closest('tr');
+        
+        statusSpan.textContent = 'Saving...';
+        statusSpan.className = 'save-status';
+        
+        const permissions = {
+            is_admin: row.querySelector('[data-perm="is_admin"]').checked,
+            can_create_users: row.querySelector('[data-perm="can_create_users"]').checked,
+            can_delete_users: row.querySelector('[data-perm="can_delete_users"]').checked,
+            can_upload_fonts: row.querySelector('[data-perm="can_upload_fonts"]').checked,
+            can_delete_fonts: row.querySelector('[data-perm="can_delete_fonts"]').checked,
+            can_download_fonts: row.querySelector('[data-perm="can_download_fonts"]').checked,
+            can_create_collections: row.querySelector('[data-perm="can_create_collections"]').checked,
+            can_create_clients: row.querySelector('[data-perm="can_create_clients"]').checked
+        };
+        
+        try {
+            const response = await fetch('/api/users/' + userId, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + token
+                },
+                body: JSON.stringify(permissions)
+            });
+            
+            if (response.ok) {
+                statusSpan.textContent = 'Saved!';
+                statusSpan.className = 'save-status success';
+                setTimeout(() => statusSpan.textContent = '', 2000);
+            } else if (response.status === 401) {
+                location.href = '/ui/login';
+            } else if (response.status === 403) {
+                statusSpan.textContent = 'Admin required';
+                statusSpan.className = 'save-status error';
+            } else {
+                const data = await response.json();
+                statusSpan.textContent = data.detail || 'Failed';
+                statusSpan.className = 'save-status error';
+            }
+        } catch (err) {
+            statusSpan.textContent = 'Error: ' + err.message;
+            statusSpan.className = 'save-status error';
+        }
+    });
+});
+
+// Search filter
+document.getElementById('search').addEventListener('input', (e) => {
+    const term = e.target.value.toLowerCase();
+    document.querySelectorAll('tbody tr').forEach(row => {
+        const username = row.dataset.username.toLowerCase();
+        row.style.display = username.includes(term) ? '' : 'none';
+    });
+});
+</script>
+{% endblock %}

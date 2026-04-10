@@ -1,0 +1,156 @@
+# FontDock
+
+**FontDock** is an open-source font server and macOS client designed for creative teams who need a simple, secure way to organise, search, download, and activate licensed fonts across a distributed team.
+
+It is built for real-world agency and studio workflows where users open Adobe InDesign files, discover missing fonts, and need a fast way to activate the correct font set without hunting through shared folders or font managers.
+
+## Core idea
+
+FontDock provides:
+
+- A central **font server**
+- A **web admin portal** for uploading and organising fonts
+- A **macOS client** for local font activation
+- An **InDesign integration bridge** for detecting missing fonts
+- A **smart matching engine** to identify likely font sets
+- An optional **AI assist layer** for natural-language and context-aware suggestions
+
+## Why this exists
+
+Many teams use expensive enterprise font managers or rely on:
+
+- messy shared folders
+- manual font hunting
+- old naming conventions
+- missing fonts in InDesign
+- inconsistent project packaging
+- remote users over VPN
+
+FontDock aims to solve that with a practical, open-source workflow-first tool.
+
+## Project goals
+
+- Make font discovery and activation easier for creative teams
+- Reduce missing-font friction in Adobe workflows
+- Provide a self-hosted alternative to enterprise font managers
+- Work securely over a private network (e.g. Tailscale)
+- Be modular enough for teams to adapt to their own workflow
+
+## Planned architecture
+
+- **Server backend:** FastAPI
+- **Database:** SQLite (dev), PostgreSQL (production)
+- **Web UI:** FastAPI + Jinja2 initially
+- **macOS client:** Python + PyQt5 (or PySide6 in future)
+- **InDesign bridge:** ExtendScript / JSX (initially)
+- **Networking:** HTTPS and/or Tailscale
+
+## Main components
+
+1. **Font Server**
+   - Stores font files and metadata
+   - Exposes API endpoints
+   - Handles authentication and permissions
+
+2. **Web Portal**
+   - Upload and manage fonts
+   - Organise by client, collection, family, and tags
+   - Search and preview
+
+3. **macOS Client**
+   - Authenticates to server
+   - Syncs metadata
+   - Downloads and caches fonts
+   - Activates/deactivates fonts locally
+
+4. **InDesign Integration**
+   - Reads current document context
+   - Detects missing fonts
+   - Sends requests to local client
+
+5. **Matching Engine**
+   - Exact name matching
+   - Alias matching
+   - Collection ranking
+   - Usage history weighting
+
+6. **AI Assist Layer (Optional)**
+   - Natural language search
+   - Contextual suggestions
+   - Ambiguity handling
+
+## Development philosophy
+
+FontDock is designed to be built in phases:
+
+1. Server + metadata storage
+2. Web UI + search + downloads
+3. macOS client + activation
+4. InDesign bridge
+5. Smart matching
+6. Optional AI features
+
+This keeps the project realistic, testable, and useful at every stage.
+
+## Status
+
+**Version 1.0.0** - Fully functional MVP complete!
+
+### ✅ Completed Features
+
+- ✅ FastAPI backend with SQLite database
+- ✅ JWT authentication and user management
+- ✅ Font upload, metadata extraction, and storage
+- ✅ Web admin portal with font preview
+- ✅ Client and collection management
+- ✅ macOS client with PyQt5 GUI
+- ✅ Font activation/deactivation (direct file copy)
+- ✅ Local font caching and sync
+- ✅ InDesign integration via HTTP bridge
+- ✅ Family grouping with collapsible UI
+- ✅ Dark mode support
+- ✅ Customizable font preview sizes
+- ✅ Status indicators (active/inactive fonts)
+- ✅ Duplicate detection (PostScript name + file hash)
+- ✅ Many-to-many client-font relationships
+
+### 🚀 Quick Start
+
+#### Server Setup
+```bash
+cd fontdock
+pip install -r requirements.txt
+python run.py
+```
+Server runs at `http://localhost:8000`
+
+#### macOS Client Setup
+```bash
+cd macos-client
+pip install -r requirements.txt
+python main.py
+```
+
+#### Build Standalone App
+```bash
+cd macos-client
+./build.sh
+```
+Creates `dist/FontDock.app`
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details
+
+## Contributing
+
+Contributions, ideas, and workflow feedback are welcome.
+
+This project is especially interested in input from:
+
+- artworkers
+- designers
+- prepress operators
+- production studios
+- agencies
+- font management admins

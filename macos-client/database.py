@@ -1,0 +1,283 @@
+import sqlite3
+from config import DB_PATH
+
+
+class LocalDatabase:
+    def __init__(self):
+        self.db_path = DB_PATH
+        self.init_db()
+    
+    def get_connection(self):
+        return sqlite3.connect(self.db_path)
+    
+    def init_db(self):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS fonts (
+                id INTEGER PRIMARY KEY,
+                postscript_name TEXT,
+                style_name TEXT,
+                full_name TEXT,
+                filename_original TEXT,
+                family_id INTEGER,
+                family_name TEXT,
+                extension TEXT,
+                file_hash_sha256 TEXT,
+                cached BOOLEAN DEFAULT 0,
+                cached_path TEXT,
+                last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS collections (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                description TEXT,
+                client_id INTEGER,
+                last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS collection_fonts (
+                collection_id INTEGER,
+                font_id INTEGER,
+                PRIMARY KEY (collection_id, font_id)
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS clients (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS activations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                font_id INTEGER,
+                activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                deactivated_at TIMESTAMP
+            )
+        """)
+        
+        conn.commit()
+        conn.close()
+    
+    def sync_fonts(self, fonts):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # Get list of font IDs from server
+        server_font_ids = [font.get('id') for font in fonts if font.get('id')]
+        
+        # Insert or update fonts from server
+        for font in fonts:
+            cursor.execute("""
+                INSERT OR REPLACE INTO fonts 
+                (id, postscript_name, style_name, full_name, filename_original, 
+                 family_id, family_name, extension, file_hash_sha256, last_synced)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, (
+                font.get('id'),
+                font.get('postscript_name'),
+                font.get('style_name'),
+                font.get('full_name'),
+                font.get('filename_original'),
+                font.get('family_id'),
+                font.get('family_name'),
+                font.get('extension'),
+                font.get('file_hash_sha256')
+            ))
+        
+        # Delete fonts that no longer exist on server
+        if server_font_ids:
+            placeholders = ','.join('?' * len(server_font_ids))
+            cursor.execute(f"""
+                DELETE FROM fonts 
+                WHERE id NOT IN ({placeholders})
+            """, server_font_ids)
+        else:
+            # If no fonts on server, delete all local fonts
+            cursor.execute("DELETE FROM fonts")
+        
+        conn.commit()
+        conn.close()
+    
+    def sync_collections(self, collections):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        for collection in collections:
+            if isinstance(collection, dict):
+                cursor.execute("""
+                    INSERT OR REPLACE INTO collections 
+                    (id, name, description, client_id, last_synced)
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, (
+                    collection.get('id'),
+                    collection.get('name'),
+                    collection.get('description'),
+                    collection.get('client_id')
+                ))
+            else:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Skipping non-dict collection: {collection}")
+        
+        conn.commit()
+        conn.close()
+    
+    def sync_collection_fonts(self, collection_id, font_ids):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("DELETE FROM collection_fonts WHERE collection_id = ?", (collection_id,))
+        
+        for font_id in font_ids:
+            cursor.execute("""
+                INSERT INTO collection_fonts (collection_id, font_id)
+                VALUES (?, ?)
+            """, (collection_id, font_id))
+        
+        conn.commit()
+        conn.close()
+    
+    def sync_clients(self, clients):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        for client in clients:
+            if isinstance(client, dict):
+                cursor.execute("""
+                    INSERT OR REPLACE INTO clients 
+                    (id, name, last_synced)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                """, (client.get('id'), client.get('name')))
+            else:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Skipping non-dict client: {client}")
+        
+        conn.commit()
+        conn.close()
+    
+    def search_fonts(self, query):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT * FROM fonts 
+            WHERE postscript_name LIKE ? 
+               OR full_name LIKE ? 
+               OR family_name LIKE ?
+            ORDER BY family_name, postscript_name
+        """, (f"%{query}%", f"%{query}%", f"%{query}%"))
+        
+        columns = [desc[0] for desc in cursor.description]
+        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+        conn.close()
+        return results
+    
+    def search_font_by_family_and_style(self, family_name, style_name):
+        """Search for font by exact family and style name match"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT * FROM fonts 
+            WHERE family_name = ? AND style_name = ?
+        """, (family_name, style_name))
+        
+        columns = [desc[0] for desc in cursor.description]
+        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+        conn.close()
+        return results
+    
+    def get_all_collections(self):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM collections ORDER BY name")
+        columns = [desc[0] for desc in cursor.description]
+        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+        conn.close()
+        return results
+    
+    def get_collection_fonts(self, collection_id):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT f.* FROM fonts f
+            JOIN collection_fonts cf ON f.id = cf.font_id
+            WHERE cf.collection_id = ?
+            ORDER BY f.family_name, f.postscript_name
+        """, (collection_id,))
+        
+        columns = [desc[0] for desc in cursor.description]
+        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+        conn.close()
+        return results
+    
+    def mark_font_cached(self, font_id, cached_path):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            UPDATE fonts SET cached = 1, cached_path = ? WHERE id = ?
+        """, (cached_path, font_id))
+        
+        conn.commit()
+        conn.close()
+    
+    def get_font_by_id(self, font_id):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM fonts WHERE id = ?", (font_id,))
+        columns = [desc[0] for desc in cursor.description]
+        row = cursor.fetchone()
+        
+        conn.close()
+        return dict(zip(columns, row)) if row else None
+    
+    def record_activation(self, font_id):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT INTO activations (font_id, activated_at)
+            VALUES (?, CURRENT_TIMESTAMP)
+        """, (font_id,))
+        
+        conn.commit()
+        conn.close()
+    
+    def get_recent_activations(self, limit=20):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT f.*, a.activated_at 
+            FROM fonts f
+            JOIN activations a ON f.id = a.font_id
+            WHERE a.deactivated_at IS NULL
+            ORDER BY a.activated_at DESC
+            LIMIT ?
+        """, (limit,))
+        
+        columns = [desc[0] for desc in cursor.description]
+        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+        conn.close()
+        return results

@@ -1,0 +1,375 @@
+{% extends "base.html" %}
+
+{% block title %}Fonts - FontDock{% endblock %}
+
+{% block content %}
+<script>
+const token = localStorage.getItem('token');
+if (!token) {
+    window.location.href = '/ui/login';
+}
+</script>
+
+<h2>Fonts</h2>
+
+<div class="card">
+    <div style="display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center;">
+        <input type="text" class="search-box" placeholder="Search families..." id="search-family" style="flex: 1; min-width: 200px;">
+        <input type="text" class="search-box" placeholder="Search styles..." id="search-style" style="flex: 1; min-width: 200px;">
+        <select id="filter-format" class="search-box" style="width: 150px;">
+            <option value="">All Formats</option>
+            <option value="TrueType">TrueType</option>
+            <option value="OpenType">OpenType</option>
+        </select>
+        <button class="btn" style="background: #ff9800;" onclick="cleanupDuplicates()">Clean Up Duplicates</button>
+        <button class="btn" style="background: #dc3545;" onclick="deleteAllFonts()">Delete All</button>
+    </div>
+    
+    <div class="font-list" id="font-list">
+        {% for family in families %}
+        <div class="family-row" data-family="{{ family.name | lower }}" data-fonts="{{ family.fonts | map(attribute='id') | join(',') }}">
+            <div class="family-header" onclick="toggleFamily('{{ family.id }}')">
+                <span class="expand-icon" id="icon-{{ family.id }}">▼</span>
+                <span class="family-name">{{ family.name }}</span>
+                <span class="family-count">{{ family.fonts | length }} style{{ 's' if family.fonts | length > 1 else '' }}</span>
+                <span class="family-format">
+                    {% if family.fonts and family.fonts[0].extension %}
+                        {% if family.fonts[0].extension in ['.ttf', '.ttc'] %}TrueType{% elif family.fonts[0].extension == '.otf' %}OpenType{% else %}{{ family.fonts[0].extension | upper }}{% endif %}
+                    {% else %}Unknown{% endif %}
+                </span>
+            </div>
+            <div class="family-styles" id="styles-{{ family.id }}" style="display: none;">
+                {% for font in family.fonts %}
+                <div class="style-row" data-style="{{ font.style_name | lower }}" data-font-id="{{ font.id }}">
+                    <div class="style-preview" id="preview-{{ font.id }}">
+                        <span class="loading">Loading...</span>
+                    </div>
+                    <div class="style-info">
+                        <span class="style-name">{{ font.style_name or 'Regular' }}</span>
+                        <span class="style-format">
+                            {% if font.extension %}
+                                {% if font.extension in ['.ttf', '.ttc'] %}TrueType{% elif font.extension == '.otf' %}OpenType{% else %}{{ font.extension | upper }}{% endif %}
+                            {% else %}-{% endif %}
+                        </span>
+                        <a href="#" class="btn" onclick="event.stopPropagation(); downloadFont('{{ font.id }}');">Download</a>
+                        <a href="#" class="btn" style="background: #dc3545;" onclick="event.stopPropagation(); deleteFont('{{ font.id }}');">Delete</a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<style>
+.font-list {
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    overflow: hidden;
+    background: #fff;
+}
+.family-row {
+    border-bottom: 1px solid #dee2e6;
+}
+.family-row:last-child {
+    border-bottom: none;
+}
+.family-header {
+    display: grid;
+    grid-template-columns: 30px 1fr 100px 150px;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: #f8f9fa;
+    cursor: pointer;
+    transition: background 0.2s;
+    border-bottom: 1px solid #dee2e6;
+}
+.family-header:hover {
+    background: #e9ecef;
+}
+.expand-icon {
+    color: #e94560;
+    font-size: 0.8rem;
+    transition: transform 0.2s;
+}
+.expand-icon.collapsed {
+    transform: rotate(-90deg);
+}
+.family-name {
+    font-weight: bold;
+    color: #212529;
+}
+.family-count {
+    color: #6c757d;
+    font-size: 0.85rem;
+}
+.family-format {
+    color: #6c757d;
+    font-size: 0.85rem;
+    text-align: right;
+}
+.family-styles {
+    background: #fff;
+}
+.style-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid #dee2e6;
+}
+.style-row:last-child {
+    border-bottom: none;
+}
+.style-preview {
+    flex: 1;
+    padding-right: 1rem;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+}
+.style-preview .loading {
+    color: #6c757d;
+    font-size: 0.8rem;
+}
+.style-preview-text {
+    font-size: 24px;
+    color: #212529;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.style-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    min-width: 250px;
+}
+.style-name {
+    color: #495057;
+    font-size: 0.9rem;
+    min-width: 100px;
+}
+.style-format {
+    color: #6c757d;
+    font-size: 0.8rem;
+    min-width: 80px;
+}
+.style-info .btn {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+}
+.hidden {
+    display: none !important;
+}
+</style>
+
+<script>
+// Store font data for preview loading
+const fontData = {};
+{% for family in families %}
+{% for font in family.fonts %}
+fontData[{{ font.id }}] = {
+    family: '{{ family.name | replace("'", "\\'") }}',
+    style: '{{ font.style_name | replace("'", "\\'") or "Regular" }}',
+    postscript: '{{ font.postscript_name | replace("'", "\\'") }}'
+};
+{% endfor %}
+{% endfor %}
+
+function toggleFamily(familyId) {
+    const stylesDiv = document.getElementById('styles-' + familyId);
+    const icon = document.getElementById('icon-' + familyId);
+    
+    if (stylesDiv.style.display === 'none') {
+        stylesDiv.style.display = 'block';
+        icon.classList.remove('collapsed');
+        // Load previews for this family's fonts
+        loadFamilyPreviews(familyId);
+    } else {
+        stylesDiv.style.display = 'none';
+        icon.classList.add('collapsed');
+    }
+}
+
+async function loadFamilyPreviews(familyId) {
+    const stylesDiv = document.getElementById('styles-' + familyId);
+    const styleRows = stylesDiv.querySelectorAll('.style-row');
+    
+    for (const row of styleRows) {
+        const fontId = row.dataset.fontId;
+        const previewDiv = document.getElementById('preview-' + fontId);
+        
+        if (previewDiv.dataset.loaded) continue;
+        previewDiv.dataset.loaded = 'true';
+        
+        try {
+            // Load the actual font file
+            const fontUrl = '/api/fonts/' + fontId + '/download';
+            const fontUrlWithToken = fontUrl + '?token=' + encodeURIComponent(token);
+            const fontFaceName = 'Font-' + fontId;
+            
+            // Create @font-face rule
+            const style = document.createElement('style');
+            style.textContent = `
+                @font-face {
+                    font-family: '${fontFaceName}';
+                    src: url('${fontUrlWithToken}') format('truetype');
+                }
+            `;
+            document.head.appendChild(style);
+            
+            // Create preview text
+            previewDiv.innerHTML = `<span class="style-preview-text" style="font-family: '${fontFaceName}', sans-serif;">The quick brown fox jumps over the lazy dog</span>`;
+        } catch (err) {
+            previewDiv.innerHTML = '<span class="style-preview-text">The quick brown fox jumps over the lazy dog</span>';
+        }
+    }
+}
+
+async function downloadFont(fontId) {
+    const response = await fetch('/api/fonts/' + fontId + '/download', {
+        headers: {'Authorization': 'Bearer ' + token}
+    });
+    
+    if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fontData[fontId]?.postscript || 'font.ttf';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+    } else if (response.status === 401) {
+        location.href = '/ui/login';
+    }
+}
+
+async function deleteFont(fontId) {
+    if (!confirm('Delete this font? This cannot be undone.')) return;
+    
+    const response = await fetch('/api/fonts/' + fontId, {
+        method: 'DELETE',
+        headers: {'Authorization': 'Bearer ' + token}
+    });
+    
+    if (response.ok) {
+        // Remove the row from the DOM
+        const row = document.querySelector('[data-font-id="' + fontId + '"]');
+        if (row) {
+            row.remove();
+        }
+        alert('Font deleted');
+    } else if (response.status === 401) {
+        location.href = '/ui/login';
+    } else if (response.status === 403) {
+        alert('Admin access required');
+    } else {
+        alert('Failed to delete font');
+    }
+}
+
+async function cleanupDuplicates() {
+    if (!confirm('This will remove duplicate fonts (same PostScript name + format). Keep the oldest, delete the rest. Continue?')) return;
+    
+    try {
+        const response = await fetch('/api/fonts/cleanup-duplicates', {
+            method: 'POST',
+            headers: {'Authorization': 'Bearer ' + token}
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            let message = `Removed ${data.removed_count} duplicate fonts\n\n`;
+            if (data.removed_count > 0) {
+                message += 'Removed:\n' + data.removed_fonts.join('\n');
+            } else {
+                message = 'No duplicates found!';
+            }
+            alert(message);
+            location.reload();
+        } else if (response.status === 401) {
+            location.href = '/ui/login';
+        } else if (response.status === 403) {
+            alert('Admin access required');
+        } else {
+            // Show detailed error
+            const errorData = await response.json();
+            console.error('Cleanup error:', errorData);
+            alert(`Failed to cleanup duplicates:\n\nStatus: ${response.status}\nError: ${errorData.detail || JSON.stringify(errorData)}`);
+        }
+    } catch (error) {
+        console.error('Cleanup exception:', error);
+        alert(`Failed to cleanup duplicates:\n\n${error.message}`);
+    }
+}
+
+async function deleteAllFonts() {
+    if (!confirm('WARNING: This will delete ALL fonts and families. This cannot be undone. Continue?')) return;
+    if (!confirm('Are you absolutely sure? All font files will be permanently deleted.')) return;
+    
+    const response = await fetch('/api/fonts/all', {
+        method: 'DELETE',
+        headers: {'Authorization': 'Bearer ' + token}
+    });
+    
+    if (response.ok) {
+        const data = await response.json();
+        alert(data.message);
+        location.reload();
+    } else if (response.status === 401) {
+        location.href = '/ui/login';
+    } else if (response.status === 403) {
+        alert('Admin access required');
+    } else {
+        alert('Failed to delete fonts');
+    }
+}
+
+// Search filters
+document.getElementById('search-family').addEventListener('input', (e) => {
+    const term = e.target.value.toLowerCase();
+    document.querySelectorAll('.family-row').forEach(row => {
+        const familyName = row.dataset.family;
+        if (familyName.includes(term)) {
+            row.classList.remove('hidden');
+        } else {
+            row.classList.add('hidden');
+        }
+    });
+});
+
+document.getElementById('search-style').addEventListener('input', (e) => {
+    const term = e.target.value.toLowerCase();
+    document.querySelectorAll('.style-row').forEach(row => {
+        const styleName = row.dataset.style;
+        if (styleName.includes(term)) {
+            row.classList.remove('hidden');
+            // Show parent family
+            row.closest('.family-row').classList.remove('hidden');
+        } else {
+            row.classList.add('hidden');
+        }
+    });
+});
+
+document.getElementById('filter-format').addEventListener('change', (e) => {
+    const format = e.target.value.toLowerCase();
+    document.querySelectorAll('.family-row').forEach(row => {
+        if (!format) {
+            row.classList.remove('hidden');
+            return;
+        }
+        const rowFormat = row.querySelector('.family-format').textContent.toLowerCase();
+        if (rowFormat.includes(format)) {
+            row.classList.remove('hidden');
+        } else {
+            row.classList.add('hidden');
+        }
+    });
+});
+</script>
+{% endblock %}

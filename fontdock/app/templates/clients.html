@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Clients - FontDock{% endblock %}
+
+{% block content %}
+<script>
+const token = localStorage.getItem('token');
+if (!token) {
+    window.location.href = '/ui/login';
+}
+</script>
+
+<h2>Clients</h2>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <input type="text" class="search-box" placeholder="Search clients..." id="search" style="margin: 0; flex: 1; margin-right: 1rem;">
+        <button class="btn" onclick="createClient()">+ New Client</button>
+    </div>
+    
+    {% if clients_with_counts %}
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Code</th>
+                <th>Fonts</th>
+                <th>Collections</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in clients_with_counts %}
+            <tr>
+                <td>{{ item.client.name }}</td>
+                <td>{{ item.client.code or '-' }}</td>
+                <td>{{ item.font_count }}</td>
+                <td>{{ item.client.collections|length if item.client.collections else 0 }}</td>
+                <td>
+                    <span style="color: {% if item.client.is_active %}green{% else %}red{% endif %};">
+                        {% if item.client.is_active %}Active{% else %}Inactive{% endif %}
+                    </span>
+                </td>
+                <td>
+                    <a href="/ui/clients/{{ item.client.id }}/fonts" class="btn">View Fonts</a>
+                    <a href="/ui/collections?client_id={{ item.client.id }}" class="btn">Collections</a>
+                    <a href="#" class="btn" onclick="editClient('{{ item.client.id }}')">Edit</a>
+                    <button class="btn" style="background: #dc3545;" onclick='deleteClient("{{ item.client.id }}", "{{ item.client.name | replace("\"", "\\\"") }}")'>Delete</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #666; text-align: center; padding: 2rem;">No clients found. Create your first client.</p>
+    {% endif %}
+</div>
+
+<script>
+function createClient() {
+    const name = prompt('Client name:');
+    if (!name) return;
+    const code = prompt('Client code (optional):');
+    
+    fetch('/api/clients', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({name: name, code: code})
+    }).then(r => {
+        if (r.ok) location.reload();
+        else if (r.status === 401) location.href = '/ui/login';
+        else if (r.status === 403) alert('Admin access required');
+        else alert('Failed to create client');
+    });
+}
+
+function viewClient(id) {
+    alert('Client detail view - ID: ' + id);
+}
+
+function editClient(id) {
+    alert('Edit client - ID: ' + id);
+}
+
+function deleteClient(id, name) {
+    if (!confirm(`Delete client "${name}"? This will remove the client association from all collections.`)) return;
+    
+    fetch(`/api/clients/${id}`, {
+        method: 'DELETE',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    }).then(r => {
+        if (r.ok) location.reload();
+        else if (r.status === 401) location.href = '/ui/login';
+        else if (r.status === 403) alert('Admin access required');
+        else r.json().then(data => alert('Failed to delete client: ' + (data.detail || 'Unknown error')));
+    });
+}
+</script>
+{% endblock %}

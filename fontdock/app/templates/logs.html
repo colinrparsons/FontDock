@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+
+{% block title %}Logs - FontDock{% endblock %}
+
+{% block content %}
+<script>
+const token = localStorage.getItem('token');
+if (!token) {
+    window.location.href = '/ui/login';
+}
+</script>
+
+<h2>Server Logs</h2>
+
+<div class="card" style="background: #1a1a2e; border: 1px solid #1a5c7a;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+        <div>
+            <label style="color: #a0a0a0; margin-right: 0.5rem;">Log File:</label>
+            <select id="log-file" class="search-box" style="width: 200px; display: inline-block;">
+                <option value="server.log">server.log</option>
+            </select>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+            <button class="btn" onclick="refreshLogs()" style="background: #1a5c7a; font-size: 0.85rem;">Refresh</button>
+            <button class="btn" onclick="downloadLogs()" style="background: #6c757d; font-size: 0.85rem;">Download</button>
+            <button class="btn" onclick="clearLogs()" style="background: #dc3545; font-size: 0.85rem;">Clear</button>
+        </div>
+    </div>
+    
+    <div id="log-content" style="background: #0f0f1a; border: 1px solid #1a5c7a; border-radius: 4px; padding: 1rem; font-family: 'Courier New', monospace; font-size: 0.8rem; color: #e0e0e0; white-space: pre-wrap; word-wrap: break-word; max-height: 70vh; overflow-y: auto;">
+        Loading logs...
+    </div>
+    
+    <div style="margin-top: 1rem; display: flex; justify-content: space-between; align-items: center;">
+        <label style="color: #a0a0a0; display: flex; align-items: center; gap: 0.5rem;">
+            <input type="checkbox" id="auto-refresh" checked>
+            Auto-refresh every 5 seconds
+        </label>
+        <span id="last-updated" style="color: #6c757d; font-size: 0.75rem;"></span>
+    </div>
+</div>
+
+<style>
+.log-entry {
+    padding: 0.25rem 0;
+    border-bottom: 1px solid #1a1a2e;
+}
+.log-entry:last-child {
+    border-bottom: none;
+}
+.log-level-info { color: #4ade80; }
+.log-level-warning { color: #fbbf24; }
+.log-level-error { color: #f87171; }
+.log-timestamp { color: #6b7280; }
+</style>
+
+<script>
+let autoRefreshInterval;
+
+async function loadLogs() {
+    const logContent = document.getElementById('log-content');
+    const lastUpdated = document.getElementById('last-updated');
+    
+    try {
+        const response = await fetch('/api/admin/logs', {
+            headers: {
+                'Authorization': 'Bearer ' + token
+            }
+        });
+        
+        if (response.status === 401) {
+            window.location.href = '/ui/login';
+            return;
+        }
+        
+        if (response.status === 403) {
+            logContent.textContent = 'Admin access required to view logs.';
+            return;
+        }
+        
+        if (!response.ok) {
+            logContent.textContent = 'Failed to load logs.';
+            return;
+        }
+        
+        const data = await response.json();
+        
+        if (data.logs && data.logs.length > 0) {
+            // Colorize log entries
+            const coloredLogs = data.logs.map(line => {
+                let cssClass = '';
+                const upperLine = line.toUpperCase();
+                if (upperLine.includes('ERROR') || upperLine.includes('EXCEPTION') || upperLine.includes('FAILED')) {
+                    cssClass = 'log-level-error';
+                } else if (upperLine.includes('WARNING') || upperLine.includes('WARN')) {
+                    cssClass = 'log-level-warning';
+                } else if (upperLine.includes('INFO')) {
+                    cssClass = 'log-level-info';
+                }
+                return `<div class="log-entry ${cssClass}">${escapeHtml(line)}</div>`;
+            }).join('');
+            
+            logContent.innerHTML = coloredLogs;
+            // Scroll to bottom
+            logContent.scrollTop = logContent.scrollHeight;
+        } else {
+            logContent.textContent = 'No logs available.';
+        }
+        
+        lastUpdated.textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+    } catch (err) {
+        logContent.textContent = 'Error loading logs: ' + err.message;
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function refreshLogs() {
+    loadLogs();
+}
+
+async function downloadLogs() {
+    try {
+        const response = await fetch('/api/admin/logs', {
+            headers: {
+                'Authorization': 'Bearer ' + token
+            }
+        });
+        
+        if (!response.ok) {
+            alert('Failed to download logs');
+            return;
+        }
+        
+        const data = await response.json();
+        const blob = new Blob([data.logs.join('\n')], { type: 'text/plain' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'server.log';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+    } catch (err) {
+        alert('Error downloading logs: ' + err.message);
+    }
+}
+
+async function clearLogs() {
+    if (!confirm('Are you sure you want to clear the logs? This cannot be undone.')) return;
+    
+    try {
+        const response = await fetch('/api/admin/logs', {
+            method: 'DELETE',
+            headers: {
+                'Authorization': 'Bearer ' + token
+            }
+        });
+        
+        if (response.ok) {
+            alert('Logs cleared');
+            loadLogs();
+        } else if (response.status === 403) {
+            alert('Admin access required');
+        } else {
+            alert('Failed to clear logs');
+        }
+    } catch (err) {
+        alert('Error clearing logs: ' + err.message);
+    }
+}
+
+function setupAutoRefresh() {
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+    }
+    
+    const checkbox = document.getElementById('auto-refresh');
+    if (checkbox.checked) {
+        autoRefreshInterval = setInterval(loadLogs, 5000);
+    }
+}
+
+document.getElementById('auto-refresh').addEventListener('change', setupAutoRefresh);
+
+// Load logs on page load
+loadLogs();
+setupAutoRefresh();
+</script>
+{% endblock %}
