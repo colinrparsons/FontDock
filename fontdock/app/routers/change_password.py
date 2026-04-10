@@ -19,14 +19,11 @@ class PasswordChange(BaseModel):
 
 
 @router.get("", response_class=HTMLResponse)
-async def change_password_page(
-    request: Request,
-    current_user: User = Depends(get_current_user)
-):
+async def change_password_page(request: Request):
     """Show password change form."""
     from app.main import render_template
     return HTMLResponse(
-        render_template("change_password.html", request=request, user=current_user)
+        render_template("change_password.html", request=request)
     )
 
 

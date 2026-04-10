@@ -95,7 +95,7 @@ async def create_new_user(
     )
     logger.info(f"[AUDIT] User created: ID={new_user.id}, username='{new_user.username}', admin='{current_user.username}'")
     
-    return user
+    return new_user
 
 
 @router.put("/{user_id}", response_model=User)

@@ -26,7 +26,11 @@ def reset_admin_password():
             return
         
         # Reset password to default
-        admin.password_hash = pwd_context.hash("admin123")
+        password = "admin123"
+        # Truncate to 72 characters for bcrypt compatibility
+        if len(password) > 72:
+            password = password[:72]
+        admin.password_hash = pwd_context.hash(password)
         db.commit()
         
         print("✅ Admin password reset to: admin123")
