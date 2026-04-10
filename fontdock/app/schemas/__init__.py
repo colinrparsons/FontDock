@@ -1,4 +1,5 @@
 """Pydantic schemas for FontDock."""
+from __future__ import annotations
 from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel, ConfigDict
@@ -238,7 +239,7 @@ class FontWithCollections(Font):
 class FontDetail(Font):
     family: Optional[FontFamily] = None
     collections: List[Collection] = []
-    aliases: List["FontAlias"] = []
+    aliases: List[FontAlias] = []
 
 
 class FontList(BaseModel):
@@ -334,7 +335,3 @@ class FontUsageEvent(FontUsageEventBase):
     id: int
     user_id: int
     created_at: datetime
-
-
-# Rebuild models to resolve forward references
-FontDetail.model_rebuild()
