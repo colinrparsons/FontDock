@@ -1,6 +1,6 @@
 """Password change router."""
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -8,7 +8,6 @@ from app.db import get_db
 from app.models import User
 from app.routers.auth import get_current_user
 from app.services.auth_service import verify_password, get_password_hash
-from app.dependencies import templates
 
 router = APIRouter(prefix="/change-password", tags=["password"])
 
@@ -25,9 +24,9 @@ async def change_password_page(
     current_user: User = Depends(get_current_user)
 ):
     """Show password change form."""
-    return templates.TemplateResponse(
-        "change_password.html",
-        {"request": request, "user": current_user}
+    from app.main import render_template
+    return HTMLResponse(
+        render_template("change_password.html", request=request, user=current_user)
     )
 
 
