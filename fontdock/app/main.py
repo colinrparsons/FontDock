@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.db import engine, Base, get_db
 from app.config import get_settings
-from app.routers import auth, fonts, collections, clients, users, admin as admin_router, import_batch
+from app.routers import auth, fonts, collections, clients, users, admin as admin_router, import_batch, change_password
 from app.routers.auth import get_current_user, get_current_admin
 from app.logging_config import setup_logging
 
@@ -72,6 +72,7 @@ def create_app() -> FastAPI:
     app.include_router(users.router)
     app.include_router(admin_router.router)
     app.include_router(import_batch.router)
+    app.include_router(change_password.router)
     
     # Mount static files (for images, CSS, JS)
     static_dir = Path(__file__).parent / "static"
