@@ -13,11 +13,18 @@ class Settings(BaseSettings):
     debug: bool = False
     secret_key: str = "change-me-in-production"
     
+    # Server (for run.py)
+    server_host: str = "0.0.0.0"
+    server_port: int = 8000
+    
     # Database
     database_url: str = "sqlite:///./fontdock.db"
     
     # Storage
     storage_path: Path = Path("./storage/fonts")
+    
+    # Logging
+    log_level: str = "INFO"
     
     # Auth
     access_token_expire_minutes: int = 60 * 24  # 1 day
@@ -29,6 +36,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = False
+        extra = "ignore"  # Ignore extra fields in .env
 
 
 @lru_cache
