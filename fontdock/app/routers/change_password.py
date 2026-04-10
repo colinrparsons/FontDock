@@ -6,7 +6,8 @@ from pydantic import BaseModel
 
 from app.db import get_db
 from app.models import User
-from app.services.auth_service import get_current_user, verify_password, get_password_hash
+from app.routers.auth import get_current_user
+from app.services.auth_service import verify_password, get_password_hash
 from app.dependencies import templates
 
 router = APIRouter(prefix="/change-password", tags=["password"])
