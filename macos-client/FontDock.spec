@@ -78,5 +78,8 @@ app = BUNDLE(
         'CFBundleShortVersionString': '1.0.0',
         'NSHighResolutionCapable': 'True',
         'NSHumanReadableCopyright': 'Copyright © 2026 Colin Parsons',
+        'NSAppTransportSecurity': {
+            'NSAllowsArbitraryLoads': True,
+        },
     },
 )
