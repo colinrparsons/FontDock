@@ -115,7 +115,14 @@ class SettingsDialog(QDialog):
         self.preview_text_input.setPlaceholderText("The quick brown fox jumps over the lazy dog")
         self.preview_text_input.setMinimumWidth(450)  # Wide enough for full sentence
         
-        layout.addRow("Server URL:", self.server_url_input)
+        # Server URL with test button
+        server_layout = QHBoxLayout()
+        server_layout.addWidget(self.server_url_input)
+        self.test_button = QPushButton("Test Connection")
+        self.test_button.clicked.connect(self.test_connection)
+        server_layout.addWidget(self.test_button)
+        
+        layout.addRow("Server URL:", server_layout)
         layout.addRow("Font Preview Size:", self.font_size_input)
         layout.addRow("App Font Size:", self.app_font_size_input)
         layout.addRow("Preview Text:", self.preview_text_input)
@@ -157,6 +164,49 @@ class SettingsDialog(QDialog):
             self.dark_mode_checkbox.setChecked(False)
             self.collapse_families_toggle.setChecked(True)  # Default to collapsed
     
+    def test_connection(self):
+        """Test connection to server."""
+        import requests
+        server_url = self.server_url_input.text().strip()
+        
+        if not server_url:
+            QMessageBox.warning(self, "Error", "Please enter a server URL")
+            return
+        
+        try:
+            # Test health endpoint
+            response = requests.get(f"{server_url}/health", timeout=5)
+            if response.status_code == 200:
+                QMessageBox.information(
+                    self, 
+                    "Connection Successful", 
+                    f"✓ Connected to FontDock server\n\nServer: {server_url}\nStatus: {response.json().get('status', 'unknown')}"
+                )
+            else:
+                QMessageBox.warning(
+                    self, 
+                    "Connection Failed", 
+                    f"Server responded with status code: {response.status_code}"
+                )
+        except requests.exceptions.ConnectionError:
+            QMessageBox.critical(
+                self, 
+                "Connection Failed", 
+                f"Cannot connect to server at:\n{server_url}\n\nPlease check:\n• Server is running\n• URL is correct\n• Network connection"
+            )
+        except requests.exceptions.Timeout:
+            QMessageBox.critical(
+                self, 
+                "Connection Timeout", 
+                f"Connection to server timed out:\n{server_url}"
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self, 
+                "Connection Error", 
+                f"Error connecting to server:\n{str(e)}"
+            )
+    
     def save_and_accept(self):
         settings = {
             'server_url': self.server_url_input.text(),
@@ -185,15 +235,28 @@ class LoginDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("FontDock Login")
         self.setModal(True)
+        self.setMinimumWidth(500)
+        self.settings_file = APP_SUPPORT_DIR / "settings.json"
         self.setup_ui()
+        self.load_server_url()
     
     def setup_ui(self):
         layout = QFormLayout()
+        
+        # Server URL with test button
+        self.server_url_input = QLineEdit()
+        self.server_url_input.setPlaceholderText("http://192.168.0.48:8000")
+        server_layout = QHBoxLayout()
+        server_layout.addWidget(self.server_url_input)
+        self.test_button = QPushButton("Test")
+        self.test_button.clicked.connect(self.test_connection)
+        server_layout.addWidget(self.test_button)
         
         self.username_input = QLineEdit()
         self.password_input = QLineEdit()
         self.password_input.setEchoMode(QLineEdit.Password)
         
+        layout.addRow("Server URL:", server_layout)
         layout.addRow("Username:", self.username_input)
         layout.addRow("Password:", self.password_input)
         
@@ -201,7 +264,7 @@ class LoginDialog(QDialog):
         self.login_button = QPushButton("Login")
         self.cancel_button = QPushButton("Cancel")
         
-        self.login_button.clicked.connect(self.accept)
+        self.login_button.clicked.connect(self.save_and_login)
         self.cancel_button.clicked.connect(self.reject)
         
         button_layout.addWidget(self.login_button)
@@ -210,8 +273,84 @@ class LoginDialog(QDialog):
         layout.addRow(button_layout)
         self.setLayout(layout)
     
+    def load_server_url(self):
+        """Load server URL from settings."""
+        if self.settings_file.exists():
+            with open(self.settings_file, 'r') as f:
+                settings = json.load(f)
+                self.server_url_input.setText(settings.get('server_url', 'http://localhost:9998'))
+        else:
+            self.server_url_input.setText('http://localhost:9998')
+    
+    def test_connection(self):
+        """Test connection to server."""
+        import requests
+        server_url = self.server_url_input.text().strip()
+        
+        if not server_url:
+            QMessageBox.warning(self, "Error", "Please enter a server URL")
+            return
+        
+        try:
+            response = requests.get(f"{server_url}/health", timeout=5)
+            if response.status_code == 200:
+                QMessageBox.information(
+                    self, 
+                    "Connection Successful", 
+                    f"✓ Connected to FontDock server\n\nServer: {server_url}\nStatus: {response.json().get('status', 'unknown')}"
+                )
+            else:
+                QMessageBox.warning(
+                    self, 
+                    "Connection Failed", 
+                    f"Server responded with status code: {response.status_code}"
+                )
+        except requests.exceptions.ConnectionError:
+            QMessageBox.critical(
+                self, 
+                "Connection Failed", 
+                f"Cannot connect to server at:\n{server_url}\n\nPlease check:\n• Server is running\n• URL is correct\n• Network connection"
+            )
+        except requests.exceptions.Timeout:
+            QMessageBox.critical(
+                self, 
+                "Connection Timeout", 
+                f"Connection to server timed out:\n{server_url}"
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self, 
+                "Connection Error", 
+                f"Error connecting to server:\n{str(e)}"
+            )
+    
+    def save_and_login(self):
+        """Save server URL and proceed with login."""
+        server_url = self.server_url_input.text().strip()
+        
+        # Save server URL to settings
+        if self.settings_file.exists():
+            with open(self.settings_file, 'r') as f:
+                settings = json.load(f)
+        else:
+            settings = {}
+        
+        settings['server_url'] = server_url
+        
+        with open(self.settings_file, 'w') as f:
+            json.dump(settings, f, indent=2)
+        
+        # Update config
+        import config
+        config.SERVER_URL = server_url
+        
+        self.accept()
+    
     def get_credentials(self):
         return self.username_input.text(), self.password_input.text()
+    
+    def get_server_url(self):
+        return self.server_url_input.text().strip()
 
 
 class MainWindow(QMainWindow):
@@ -252,12 +391,68 @@ class MainWindow(QMainWindow):
         """Create the application menu bar."""
         menubar = self.menuBar()
         
+        # Tools menu
+        tools_menu = menubar.addMenu('Tools')
+        
+        # Clear Cache action
+        clear_cache_action = tools_menu.addAction('Clear Cache & Database')
+        clear_cache_action.triggered.connect(self.clear_cache)
+        
         # Help menu
         help_menu = menubar.addMenu('Help')
         
         # About action
         about_action = help_menu.addAction('About FontDock')
         about_action.triggered.connect(self.show_about)
+    
+    def clear_cache(self):
+        """Clear local cache and database."""
+        reply = QMessageBox.question(
+            self,
+            'Clear Cache & Database',
+            'This will delete all local font data and cache.\n\n'
+            'You will need to sync again to download fonts.\n\n'
+            'Are you sure you want to continue?',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            try:
+                import shutil
+                
+                # Close database connection
+                self.db.close()
+                
+                # Delete database file
+                db_file = APP_SUPPORT_DIR / "fontdock.db"
+                if db_file.exists():
+                    db_file.unlink()
+                
+                # Delete cache directory
+                cache_dir = APP_SUPPORT_DIR / "cache"
+                if cache_dir.exists():
+                    shutil.rmtree(cache_dir)
+                
+                QMessageBox.information(
+                    self,
+                    'Cache Cleared',
+                    'Local cache and database have been cleared.\n\n'
+                    'The application will now restart.'
+                )
+                
+                # Restart the application
+                import sys
+                from PyQt5.QtWidgets import QApplication
+                QApplication.quit()
+                os.execl(sys.executable, sys.executable, *sys.argv)
+                
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    'Error',
+                    f'Failed to clear cache:\n{str(e)}'
+                )
     
     def show_about(self):
         """Show the About dialog."""
@@ -474,6 +669,10 @@ class MainWindow(QMainWindow):
     def show_login(self):
         dialog = LoginDialog(self)
         if dialog.exec_() == QDialog.Accepted:
+            # Update server URL from login dialog
+            server_url = dialog.get_server_url()
+            self.api.server_url = server_url
+            
             username, password = dialog.get_credentials()
             try:
                 self.api.login(username, password)
