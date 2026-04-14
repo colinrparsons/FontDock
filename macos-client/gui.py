@@ -420,9 +420,16 @@ class MainWindow(QMainWindow):
         if reply == QMessageBox.Yes:
             try:
                 import shutil
+                import time
                 
-                # Close database connection
-                self.db.close()
+                # Clear authentication token
+                self.api.clear_token()
+                
+                # Set db to None to release any references
+                self.db = None
+                
+                # Give a moment for any pending operations to complete
+                time.sleep(0.5)
                 
                 # Delete database file
                 db_file = APP_SUPPORT_DIR / "fontdock.db"
@@ -437,8 +444,8 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(
                     self,
                     'Cache Cleared',
-                    'Local cache and database have been cleared.\n\n'
-                    'The application will now restart.'
+                    'Local cache, database, and login credentials have been cleared.\n\n'
+                    'The application will now restart and you will need to login again.'
                 )
                 
                 # Restart the application
@@ -667,6 +674,9 @@ class MainWindow(QMainWindow):
                 QApplication.instance().setFont(app_font)
     
     def show_login(self):
+        # Clear any existing token first to force fresh login
+        self.api.clear_token()
+        
         dialog = LoginDialog(self)
         if dialog.exec_() == QDialog.Accepted:
             # Update server URL from login dialog
@@ -680,6 +690,8 @@ class MainWindow(QMainWindow):
                 self.sync_metadata()
             except Exception as e:
                 QMessageBox.critical(self, "Login Failed", str(e))
+                # Clear token on failed login
+                self.api.clear_token()
                 self.close()
         else:
             self.close()
