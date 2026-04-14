@@ -24,9 +24,14 @@ def main():
     
     app = QApplication(sys.argv)
     window = MainWindow()
-    window.show()
     
-    exit_code = app.exec_()
+    # Only show window if login was successful
+    if window.login_successful:
+        window.show()
+        exit_code = app.exec_()
+    else:
+        # Login cancelled or failed, exit immediately
+        exit_code = 0
     
     local_api.stop()
     

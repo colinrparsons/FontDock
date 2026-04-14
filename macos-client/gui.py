@@ -381,11 +381,15 @@ class MainWindow(QMainWindow):
         # Apply settings (dark mode, font size)
         self.apply_settings()
         
+        # Don't show window yet - will show after successful login
+        self.login_successful = False
+        
         if not self.api.token:
-            self.show_login()
+            self.login_successful = self.show_login()
         else:
             self.setup_ui()
             self.sync_metadata()
+            self.login_successful = True
     
     def create_menu_bar(self):
         """Create the application menu bar."""
@@ -688,13 +692,16 @@ class MainWindow(QMainWindow):
                 self.api.login(username, password)
                 self.setup_ui()
                 self.sync_metadata()
+                return True  # Login successful
             except Exception as e:
                 QMessageBox.critical(self, "Login Failed", str(e))
                 # Clear token on failed login
                 self.api.clear_token()
                 self.close()
+                return False  # Login failed
         else:
             self.close()
+            return False  # Login cancelled
     
     def setup_ui(self):
         central_widget = QWidget()
