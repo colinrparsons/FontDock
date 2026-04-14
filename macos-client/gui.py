@@ -956,7 +956,7 @@ class MainWindow(QMainWindow):
                 is_activated = (user_fonts_dir / font['filename']).exists()
                 
                 # Create preview text in actual font with consistent indentation
-                preview_text = f"The quick brown fox jumps over the lazy dog"
+                preview_text = self.get_preview_text()
                 item_text = f"    {preview_text}    {style}    {font_format}"
                 item = QListWidgetItem(item_text)
                 
@@ -1389,7 +1389,7 @@ class MainWindow(QMainWindow):
                     filename = font.get('filename_original', '')
                     is_activated = (user_fonts_dir / filename).exists() if filename else False
                     
-                    preview_text = "The quick brown fox jumps over the lazy dog"
+                    preview_text = self.get_preview_text()
                     item_text = f"{preview_text}    {style}    {font_format}"
                     font_item = QListWidgetItem(item_text)
                     
