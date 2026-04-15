@@ -38,16 +38,18 @@
 - Windows service for background operation
 
 ### Adobe Photoshop Integration
+- [x] Auto-activate startup script (ExtendScript)
+- [x] Missing font detection (compare vs system fonts)
+- [x] Font activation via FontDock client API
 - [ ] CEP panel for Photoshop
-- [ ] Detect missing fonts in open document
-- [ ] One-click activation from panel
 - [ ] Font preview in panel
 - [ ] Recent fonts tracking
 
 ### Adobe Illustrator Integration
+- [x] Auto-activate startup script (ExtendScript)
+- [x] Missing font detection (compare vs app.textFonts)
+- [x] Font activation via FontDock client API
 - [ ] CEP panel for Illustrator
-- [ ] Missing font detection
-- [ ] Font activation workflow
 - [ ] Collection-based activation
 - [ ] Document font list
 
@@ -139,31 +141,31 @@
 
 ### 2. Photoshop Integration (Priority: HIGH)
 
-**Week 1: CEP Panel Development**
-- [ ] Create CEP extension structure
-- [ ] Design panel UI (HTML/CSS/JS)
-- [ ] Implement font detection script
-- [ ] Connect to local FontDock client
+**Completed:**
+- [x] Auto-activate startup script (FontDockAutoActivate_Photoshop.jsx)
+- [x] Missing font detection via layer scanning
+- [x] Font activation via FontDock client API
+- [x] Install/uninstall scripts
 
-**Week 2: Functionality**
-- [ ] Missing font detection
-- [ ] Font activation via HTTP API
-- [ ] Status indicators
-- [ ] Error handling
-
-**Week 3: Testing & Polish**
-- [ ] Test on Photoshop CC 2023/2024
-- [ ] User experience refinement
+**Remaining:**
+- [ ] CEP panel for Photoshop
+- [ ] Font preview in panel
+- [ ] Test on Photoshop CC 2023/2024/2025/2026
 - [ ] Installation guide
-- [ ] Demo video
 
 ### 3. Illustrator Integration (Priority: MEDIUM)
 
-**Similar timeline to Photoshop:**
+**Completed:**
+- [x] Auto-activate startup script (FontDockAutoActivate_Illustrator.jsx)
+- [x] Missing font detection via textFrame scanning
+- [x] Font activation via FontDock client API
+- [x] Install/uninstall scripts
+
+**Remaining:**
 - [ ] CEP panel for Illustrator
-- [ ] Font detection (ExtendScript)
-- [ ] Activation workflow
-- [ ] Testing and documentation
+- [ ] Collection-based activation
+- [ ] Test on Illustrator CC 2023/2024/2025/2026
+- [ ] Documentation
 
 ---
 
@@ -218,8 +220,8 @@
 | Client App | ✅ v1.0 | 🚧 v1.1 | 📋 v2.0 | 📋 v2.0 |
 | Font Activation | ✅ | 🚧 | 📋 | ❌ |
 | InDesign Integration | ✅ | 🚧 | 📋 | ❌ |
-| Photoshop Integration | 🚧 v1.1 | 🚧 v1.1 | 🚧 v1.1 | ❌ |
-| Illustrator Integration | 🚧 v1.1 | 🚧 v1.1 | 🚧 v1.1 | ❌ |
+| Photoshop Integration | ✅ v1.1 | 🚧 v1.1 | 🚧 v1.1 | ❌ |
+| Illustrator Integration | ✅ v1.1 | 🚧 v1.1 | 🚧 v1.1 | ❌ |
 
 **Legend:**
 - ✅ Complete
@@ -249,5 +251,5 @@ Want to help build these features? Check out:
 
 ---
 
-**Last Updated:** April 10, 2026  
+**Last Updated:** April 15, 2026  
 **Maintainer:** Colin Parsons

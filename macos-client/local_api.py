@@ -5,8 +5,18 @@ from config import LOCAL_API_PORT
 from font_manager import FontManager
 
 
-class InDesignBridgeHandler(BaseHTTPRequestHandler):
+class AdobeBridgeHandler(BaseHTTPRequestHandler):
     font_manager = None
+    
+    def do_GET(self):
+        if self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'status': 'ok', 'service': 'fontdock-client'}).encode('utf-8'))
+        else:
+            self.send_response(404)
+            self.end_headers()
     
     def do_POST(self):
         if self.path == '/open-fonts':
@@ -160,9 +170,9 @@ class LocalAPIServer:
         self.thread = None
     
     def start(self):
-        InDesignBridgeHandler.font_manager = self.font_manager
+        AdobeBridgeHandler.font_manager = self.font_manager
         
-        self.server = HTTPServer(('127.0.0.1', LOCAL_API_PORT), InDesignBridgeHandler)
+        self.server = HTTPServer(('127.0.0.1', LOCAL_API_PORT), AdobeBridgeHandler)
         
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
