@@ -10,7 +10,7 @@ A desktop client for FontDock font management system.
 - **Collections**: Browse and activate entire collections
 - **Font Activation**: Download and activate fonts on demand
 - **Recent Fonts**: Track recently activated fonts
-- **InDesign Bridge**: Local API for InDesign integration
+- **Adobe App Integration**: Auto-activation for InDesign, Illustrator, and Photoshop
 
 ## Installation
 
@@ -57,11 +57,24 @@ chmod +x main.py
 - Select a collection
 - Click "Activate All Fonts"
 
-### Via InDesign Bridge
+### Via Adobe App Auto-Activation
 
-The client runs a local API server on `http://127.0.0.1:8765` for InDesign integration.
+The client automatically detects when Adobe documents are opened and activates missing fonts:
 
-Example request:
+- **InDesign**: Startup script with `afterOpen` event sends missing font info via HTTP
+- **Illustrator**: AppleScript app watcher detects new `.ai` files, parses fonts from disk
+- **Photoshop**: AppleScript app watcher detects new `.psd` files, scans text layers for font names
+
+All three apps are version-independent — the client auto-detects installed versions.
+
+Install scripts:
+```bash
+cd adobe-scripts
+./install.sh    # Install all 3 apps
+./uninstall.sh  # Uninstall all 3 apps
+```
+
+The client also runs a local API server on `http://127.0.0.1:8765` for manual requests:
 ```bash
 curl -X POST http://127.0.0.1:8765/open-fonts \
   -H "Content-Type: application/json" \

@@ -38,17 +38,19 @@
 - Windows service for background operation
 
 ### Adobe Photoshop Integration
-- [x] Auto-activate startup script (ExtendScript)
-- [x] Missing font detection (compare vs system fonts)
-- [x] Font activation via FontDock client API
+- [x] Auto-activate via AppleScript font scanning
+- [x] Text layer font name extraction (PostScript names)
+- [x] Font activation via FontDock client
+- [x] Version-independent app detection
 - [ ] CEP panel for Photoshop
 - [ ] Font preview in panel
 - [ ] Recent fonts tracking
 
 ### Adobe Illustrator Integration
-- [x] Auto-activate startup script (ExtendScript)
-- [x] Missing font detection (compare vs app.textFonts)
-- [x] Font activation via FontDock client API
+- [x] Auto-activate via AppleScript app watcher + file parsing
+- [x] Font extraction from .ai files (XMP metadata)
+- [x] Font activation via FontDock client
+- [x] Version-independent app detection
 - [ ] CEP panel for Illustrator
 - [ ] Collection-based activation
 - [ ] Document font list
@@ -142,30 +144,30 @@
 ### 2. Photoshop Integration (Priority: HIGH)
 
 **Completed:**
-- [x] Auto-activate startup script (FontDockAutoActivate_Photoshop.jsx)
-- [x] Missing font detection via layer scanning
-- [x] Font activation via FontDock client API
-- [x] Install/uninstall scripts
+- [x] Auto-activate via AppleScript font scanning (text layers)
+- [x] Font name extraction from Photoshop DOM
+- [x] Font activation via FontDock client
+- [x] Version-independent app detection (CFBundleDisplayName)
+- [x] Unified install/uninstall scripts
 
 **Remaining:**
 - [ ] CEP panel for Photoshop
 - [ ] Font preview in panel
-- [ ] Test on Photoshop CC 2023/2024/2025/2026
-- [ ] Installation guide
+- [ ] Test on Photoshop CC 2023/2024/2025
 
 ### 3. Illustrator Integration (Priority: MEDIUM)
 
 **Completed:**
-- [x] Auto-activate startup script (FontDockAutoActivate_Illustrator.jsx)
-- [x] Missing font detection via textFrame scanning
-- [x] Font activation via FontDock client API
-- [x] Install/uninstall scripts
+- [x] Auto-activate via AppleScript app watcher + file-based IPC
+- [x] Font extraction from .ai files (XMP stFnt:fontName)
+- [x] Font activation via FontDock client
+- [x] Version-independent app detection
+- [x] Unified install/uninstall scripts
 
 **Remaining:**
 - [ ] CEP panel for Illustrator
 - [ ] Collection-based activation
-- [ ] Test on Illustrator CC 2023/2024/2025/2026
-- [ ] Documentation
+- [ ] Test on Illustrator CC 2023/2024/2025
 
 ---
 
@@ -219,9 +221,9 @@
 |---------|-------|---------|-------|-----|
 | Client App | ✅ v1.0 | 🚧 v1.1 | 📋 v2.0 | 📋 v2.0 |
 | Font Activation | ✅ | 🚧 | 📋 | ❌ |
-| InDesign Integration | ✅ | 🚧 | 📋 | ❌ |
-| Photoshop Integration | ✅ v1.1 | 🚧 v1.1 | 🚧 v1.1 | ❌ |
-| Illustrator Integration | ✅ v1.1 | 🚧 v1.1 | 🚧 v1.1 | ❌ |
+| InDesign Auto-Activation | ✅ | 🚧 | 📋 | ❌ |
+| Photoshop Auto-Activation | ✅ v1.1 | 🚧 v1.1 | 🚧 v1.1 | ❌ |
+| Illustrator Auto-Activation | ✅ v1.1 | 🚧 v1.1 | 🚧 v1.1 | ❌ |
 
 **Legend:**
 - ✅ Complete
@@ -251,5 +253,5 @@ Want to help build these features? Check out:
 
 ---
 
-**Last Updated:** April 15, 2026  
+**Last Updated:** April 16, 2026  
 **Maintainer:** Colin Parsons

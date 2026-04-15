@@ -11,7 +11,7 @@ FontDock provides:
 - A central **font server**
 - A **web admin portal** for uploading and organising fonts
 - A **macOS client** for local font activation
-- An **InDesign integration bridge** for detecting missing fonts
+- **Adobe app integration** (InDesign, Illustrator, Photoshop) for auto-activating missing fonts
 - A **smart matching engine** to identify likely font sets
 - An optional **AI assist layer** for natural-language and context-aware suggestions
 
@@ -63,10 +63,11 @@ FontDock aims to solve that with a practical, open-source workflow-first tool.
    - Downloads and caches fonts
    - Activates/deactivates fonts locally
 
-4. **InDesign Integration**
-   - Reads current document context
-   - Detects missing fonts
-   - Sends requests to local client
+4. **Adobe App Integration**
+   - InDesign: ExtendScript startup script with `afterOpen` event
+   - Illustrator: AppleScript app watcher + file-based IPC
+   - Photoshop: AppleScript font scanning from text layers
+   - Auto-detects installed app versions (no hardcoded paths)
 
 5. **Matching Engine**
    - Exact name matching
@@ -106,7 +107,10 @@ This keeps the project realistic, testable, and useful at every stage.
 - ✅ macOS client with PyQt5 GUI
 - ✅ Font activation/deactivation (direct file copy)
 - ✅ Local font caching and sync
-- ✅ InDesign integration via HTTP bridge
+- ✅ InDesign auto-activation (startup script + `afterOpen` event)
+- ✅ Illustrator auto-activation (AppleScript watcher + file parsing)
+- ✅ Photoshop auto-activation (AppleScript font scanning)
+- ✅ Version-independent Adobe app detection
 - ✅ Family grouping with collapsible UI
 - ✅ Dark mode support
 - ✅ Customizable font preview sizes

@@ -1,146 +1,121 @@
 # Illustrator & Photoshop Auto-Activation Plan
 
 **Date:** April 9, 2026  
-**Status:** Planning Phase
+**Updated:** April 16, 2026  
+**Status:** ✅ Complete
 
 ## Overview
 
-Extend FontDock auto-activation to Adobe Illustrator and Photoshop using the same approach as InDesign.
+FontDock auto-activation for Adobe Illustrator and Photoshop, using a different architecture than InDesign due to ExtendScript limitations.
 
-## Key Differences from InDesign
+## Architecture
 
-### InDesign
+### InDesign (Reference)
 - ✅ Has `document.fonts` collection with status (NOT_AVAILABLE, SUBSTITUTED)
-- ✅ Can detect missing fonts automatically
-- ✅ Has `afterOpen` event for documents
+- ✅ `afterOpen` event listener works
+- ✅ `app.doScript` for HTTP requests
+- ✅ Startup script auto-runs from `~/Library/Application Support/Adobe/Startup Scripts CS6/InDesign/`
 
 ### Illustrator
-- ❓ Font detection via text frames (`textFrame.textRange.characterAttributes.textFont`)
-- ❓ No built-in "missing fonts" status
-- ❓ May need to check if font is installed vs used
-- ✅ Has document events
+- ❌ `app.doScript` undefined (InDesign only)
+- ❌ `system.callSystem` undefined
+- ❌ `Socket` no constructor
+- ❌ `app.notifiers` undefined
+- ❌ `app.addEventListener` undefined
+- ❌ Reading font info from textFrames with missing fonts throws GFKU error
+- ✅ `File`/`Folder` read/write works
+- **Solution:** AppleScript app watcher + file-based IPC + parse .ai files on disk
 
 ### Photoshop
-- ❓ Font detection via text layers (`layer.textItem.font`)
-- ❓ No built-in "missing fonts" status
-- ❓ Different layer structure (groups, nested layers)
-- ✅ Has document events
+- ✅ DOM can read font names from text layers
+- ❌ `do javascript` AppleScript command fails in PS 2026 (Internal Error 8800)
+- **Solution:** AppleScript font scanning directly from Python client
 
-## Research Needed
+## Implementation
 
-### Step 1: Test Font Information
-Run debug scripts to see what font data is available:
+### Illustrator Auto-Activation Flow
+1. FontDock client's `AdobeAppWatcher` polls every 5s using AppleScript
+2. Detects new `.ai` documents via `file path` property
+3. Parses `.ai` file on disk using `strings` + regex (XMP `stFnt:fontName`)
+4. Activates fonts by copying to `~/Library/Fonts/`
 
-**Illustrator:**
-1. Open Illustrator document with text
-2. Run `DebugFontInfo_Illustrator.jsx` from File > Scripts > Other Script
-3. Check `~/Desktop/illustrator_font_debug.txt`
+### Photoshop Auto-Activation Flow
+1. FontDock client's `AdobeAppWatcher` polls every 5s using AppleScript
+2. Detects new `.psd` documents via `file path` property
+3. Scans text layers for font PostScript names via AppleScript:
+   - Uses `kind of layer i of document d` to find text layers
+   - Uses `font of text object of layer i of document d` for PostScript name
+4. Activates fonts by copying to `~/Library/Fonts/`
 
-**Photoshop:**
-1. Open Photoshop document with text layers
-2. Run `DebugFontInfo_Photoshop.jsx` from File > Scripts > Browse
-3. Check `~/Desktop/photoshop_font_debug.txt`
+### Key Technical Details
 
-### Step 2: Determine Missing Font Detection
+**Version-Independent App Detection:**
+- Scans `/Applications/Adobe Illustrator*`, `/Applications/Adobe Photoshop*` with glob
+- Reads `CFBundleDisplayName` from `Info.plist` for correct AppleScript names
+- Illustrator: "Adobe Illustrator" (no version)
+- Photoshop: "Adobe Photoshop 2026" (with version!)
 
-**Questions:**
-- Can we detect if a font is missing/substituted?
-- Do these apps have a "missing fonts" API?
-- Can we compare used fonts vs installed fonts?
+**Preventing Accidental App Launches:**
+- `tell application "X"` in AppleScript launches apps if not running
+- All AppleScript guarded with System Events check first:
+  ```applescript
+  tell application "System Events"
+      set isRunning to (name of processes) contains "Adobe Photoshop 2026"
+  end tell
+  ```
 
-**Possible Approaches:**
-
-1. **Check Font Availability** - Try to access font properties, catch errors
-2. **Compare with System Fonts** - Get list of installed fonts, compare with used fonts
-3. **User Trigger** - Manual script run (not automatic like InDesign)
-
-### Step 3: Event Handling
-
-**Illustrator Events:**
-- `app.notifiers` - Can register for document open/close events
-- May need polling or manual trigger
-
-**Photoshop Events:**
-- Limited event system compared to InDesign
-- May need manual script execution
-
-## Implementation Options
-
-### Option A: Automatic (Like InDesign)
-- Install startup script
-- Detect missing fonts on document open
-- Auto-activate via FontDock client
-- **Pros:** Seamless user experience
-- **Cons:** May not be possible if missing font detection unavailable
-
-### Option B: Manual Script
-- User runs script from Scripts menu
-- Script scans document for fonts
-- Activates all fonts (or only missing ones if detectable)
-- **Pros:** Always works, simple implementation
-- **Cons:** Requires user action
-
-### Option C: Hybrid
-- Startup script registers menu item or keyboard shortcut
-- User triggers activation when needed
-- **Pros:** Easy access, reliable
-- **Cons:** Not fully automatic
+**Photoshop AppleScript Quirks:**
+- `repeat with doc in documents` causes Internal Error 9999
+- Must use `repeat with d from 1 to count of documents` instead
+- `do javascript` fails with error 8800 in PS 2026
 
 ## Script Locations
 
-### Illustrator
-**Startup Scripts:**
+### Unified Install/Uninstall
 ```
-~/Library/Application Support/Adobe/Startup Scripts CS6/Illustrator/
-```
-or
-```
-/Applications/Adobe Illustrator 2026/Presets/en_US/Scripts/
+adobe-scripts/install.sh    # Installs all 3 apps
+adobe-scripts/uninstall.sh  # Uninstalls all 3 apps
 ```
 
-**User Scripts:**
+### Illustrator
 ```
-~/Library/Application Support/Adobe/Illustrator [version]/en_US/Scripts/
+~/Library/Application Support/Adobe/Startup Scripts CS6/Illustrator/FontDockAutoActivate_Illustrator.jsx
 ```
 
 ### Photoshop
-**Startup Scripts:**
 ```
-~/Library/Application Support/Adobe/Startup Scripts CS6/Adobe Photoshop/
-```
-
-**User Scripts:**
-```
-~/Library/Application Support/Adobe/Adobe Photoshop 2026/Presets/Scripts/
+~/Library/Application Support/Adobe/Startup Scripts CS6/Adobe Photoshop/FontDockAutoActivate_Photoshop.jsx
 ```
 
-## Next Steps
+### InDesign
+```
+~/Library/Preferences/Adobe InDesign/Version 21.0/en_GB/Scripts/Startup Scripts/FontDockAutoActivate_InDesign.jsx
+```
 
-1. ✅ Create debug scripts for Illustrator and Photoshop
-2. ⏳ Test with documents containing fonts
-3. ⏳ Analyze font information available
-4. ⏳ Determine if missing font detection is possible
-5. ⏳ Choose implementation approach
-6. ⏳ Build auto-activation scripts
-7. ⏳ Test and refine
+## File-Based IPC
 
-## Expected Challenges
+Request files written to `~/Library/Application Support/FontDock/requests/`:
 
-1. **Font Detection** - May not have InDesign's robust font API
-2. **Missing Font Status** - May need workarounds to detect missing fonts
-3. **Event System** - May not have reliable document open events
-4. **Performance** - Scanning all text elements may be slow for large documents
-5. **Font Name Format** - May differ from InDesign's family/style separation
+```json
+{
+  "file_path": "/path/to/document.ai",
+  "app": "illustrator",
+  "timestamp": 1776295129519
+}
+```
 
-## Fallback Plan
+Photoshop can also send font names directly:
+```json
+{
+  "file_path": "/path/to/document.psd",
+  "app": "photoshop",
+  "font_names": ["CostaDisplay-WaveBold", "CostaDisplay-Bold"],
+  "timestamp": 1776295129519
+}
+```
 
-If automatic detection isn't possible:
-- Create manual "Activate Document Fonts" script
-- Add to Scripts menu in both apps
-- User runs when opening documents with missing fonts
-- Still uses FontDock client API for activation
-- Better than nothing, still saves time vs manual activation
+The `RequestFileWatcher` prioritizes `font_names` over file parsing when present.
 
 ---
 
-**Status:** Awaiting font information from debug scripts
+**Status:** Implemented and tested with Illustrator 2026, Photoshop 2026, InDesign 2026

@@ -10,90 +10,114 @@ echo "FontDock Adobe Scripts Installer"
 echo "========================================="
 echo ""
 
-# Check if scripts exist
-if [ ! -f "$SCRIPT_DIR/FontDockAutoActivate_Illustrator.jsx" ]; then
-    echo "❌ Illustrator script not found at $SCRIPT_DIR/FontDockAutoActivate_Illustrator.jsx"
-    exit 1
-fi
+INSTALLED=0
+SKIPPED=0
 
-if [ ! -f "$SCRIPT_DIR/FontDockAutoActivate_Photoshop.jsx" ]; then
-    echo "❌ Photoshop script not found at $SCRIPT_DIR/FontDockAutoActivate_Photoshop.jsx"
-    exit 1
-fi
-
-# Adobe startup script directories
-ILLUSTRATOR_STARTUP_DIR="$HOME/Library/Application Support/Adobe/Startup Scripts CS6/Illustrator"
-PHOTOSHOP_STARTUP_DIR="$HOME/Library/Application Support/Adobe/Startup Scripts CS6/Adobe Photoshop"
-INDESIGN_STARTUP_DIR="$HOME/Library/Application Support/Adobe/Startup Scripts CS6/InDesign"
-
-# User script directories (alternative locations)
-ILLUSTRATOR_USER_DIR="$HOME/Library/Application Support/Adobe/Startup Scripts CS6/Illustrator"
-PHOTOSHOP_USER_DIR="$HOME/Library/Application Support/Adobe/Startup Scripts CS6/Adobe Photoshop"
-
-# Create directories if they don't exist
-mkdir -p "$ILLUSTRATOR_STARTUP_DIR"
-mkdir -p "$PHOTOSHOP_STARTUP_DIR"
-mkdir -p "$INDESIGN_STARTUP_DIR"
-
-# Install Illustrator script
-echo "📌 Installing Illustrator auto-activate script..."
-cp "$SCRIPT_DIR/FontDockAutoActivate_Illustrator.jsx" "$ILLUSTRATOR_STARTUP_DIR/"
-if [ $? -eq 0 ]; then
-    echo "   ✅ Installed to: $ILLUSTRATOR_STARTUP_DIR/"
-else
-    echo "   ❌ Failed to install Illustrator script"
-fi
-
-# Install Photoshop script
-echo "📌 Installing Photoshop auto-activate script..."
-cp "$SCRIPT_DIR/FontDockAutoActivate_Photoshop.jsx" "$PHOTOSHOP_STARTUP_DIR/"
-if [ $? -eq 0 ]; then
-    echo "   ✅ Installed to: $PHOTOSHOP_STARTUP_DIR/"
-else
-    echo "   ❌ Failed to install Photoshop script"
-fi
-
-# Install InDesign script (if it exists in the indesign-scripts directory)
-INDESIGN_SCRIPT="$SCRIPT_DIR/../indesign-scripts/FontDockAutoActivate.jsx"
-if [ -f "$INDESIGN_SCRIPT" ]; then
-    echo "📌 Installing InDesign auto-activate script..."
-    cp "$INDESIGN_SCRIPT" "$INDESIGN_STARTUP_DIR/"
+# ============================================================
+# Illustrator
+# ============================================================
+if [ -f "$SCRIPT_DIR/FontDockAutoActivate_Illustrator.jsx" ]; then
+    ILLUSTRATOR_DIR="$HOME/Library/Application Support/Adobe/Startup Scripts CS6/Illustrator"
+    mkdir -p "$ILLUSTRATOR_DIR"
+    cp "$SCRIPT_DIR/FontDockAutoActivate_Illustrator.jsx" "$ILLUSTRATOR_DIR/"
     if [ $? -eq 0 ]; then
-        echo "   ✅ Installed to: $INDESIGN_STARTUP_DIR/"
+        echo "✅ Illustrator script installed"
+        INSTALLED=$((INSTALLED + 1))
     else
-        echo "   ❌ Failed to install InDesign script"
+        echo "❌ Failed to install Illustrator script"
     fi
 else
-    echo "⚠️  InDesign script not found at $INDESIGN_SCRIPT (skipping)"
+    echo "⚠️  Illustrator script not found (skipping)"
+    SKIPPED=$((SKIPPED + 1))
 fi
 
-# Install debug scripts to user scripts directory
-echo ""
-echo "📌 Installing debug scripts (optional - for troubleshooting)..."
-
-# Illustrator debug script
-if [ -f "$SCRIPT_DIR/DebugFontInfo_Illustrator.jsx" ]; then
-    echo "   ✅ DebugFontInfo_Illustrator.jsx available in $SCRIPT_DIR/"
+# ============================================================
+# Photoshop
+# ============================================================
+if [ -f "$SCRIPT_DIR/FontDockAutoActivate_Photoshop.jsx" ]; then
+    PHOTOSHOP_DIR="$HOME/Library/Application Support/Adobe/Startup Scripts CS6/Adobe Photoshop"
+    mkdir -p "$PHOTOSHOP_DIR"
+    cp "$SCRIPT_DIR/FontDockAutoActivate_Photoshop.jsx" "$PHOTOSHOP_DIR/"
+    if [ $? -eq 0 ]; then
+        echo "✅ Photoshop script installed"
+        INSTALLED=$((INSTALLED + 1))
+    else
+        echo "❌ Failed to install Photoshop script"
+    fi
+else
+    echo "⚠️  Photoshop script not found (skipping)"
+    SKIPPED=$((SKIPPED + 1))
 fi
 
-# Photoshop debug script
-if [ -f "$SCRIPT_DIR/DebugFontInfo_Photoshop.jsx" ]; then
-    echo "   ✅ DebugFontInfo_Photoshop.jsx available in $SCRIPT_DIR/"
+# ============================================================
+# InDesign - uses versioned preferences path
+# ============================================================
+if [ -f "$SCRIPT_DIR/FontDockAutoActivate_InDesign.jsx" ]; then
+    INDESIGN_PREFS="$HOME/Library/Preferences/Adobe InDesign"
+    if [ -d "$INDESIGN_PREFS" ]; then
+        # Find latest version and locale
+        LATEST_VERSION=$(ls "$INDESIGN_PREFS" 2>/dev/null | grep "Version" | sort -V | tail -n 1)
+        if [ -n "$LATEST_VERSION" ]; then
+            # Detect locale
+            LOCALE=""
+            for loc in en_GB en_US; do
+                if [ -d "$INDESIGN_PREFS/$LATEST_VERSION/$loc" ]; then
+                    LOCALE="$loc"
+                    break
+                fi
+            done
+            
+            if [ -n "$LOCALE" ]; then
+                STARTUP_DIR="$INDESIGN_PREFS/$LATEST_VERSION/$LOCALE/Scripts/Startup Scripts"
+                mkdir -p "$STARTUP_DIR"
+                cp "$SCRIPT_DIR/FontDockAutoActivate_InDesign.jsx" "$STARTUP_DIR/"
+                if [ $? -eq 0 ]; then
+                    echo "✅ InDesign script installed ($LATEST_VERSION/$LOCALE)"
+                    INSTALLED=$((INSTALLED + 1))
+                else
+                    echo "❌ Failed to install InDesign script"
+                fi
+            else
+                echo "⚠️  Could not detect InDesign locale (skipping)"
+                SKIPPED=$((SKIPPED + 1))
+            fi
+        else
+            echo "⚠️  No InDesign version found in preferences (skipping)"
+            SKIPPED=$((SKIPPED + 1))
+        fi
+    else
+        # Fallback: also install to CS6 startup scripts
+        INDESIGN_CS6_DIR="$HOME/Library/Application Support/Adobe/Startup Scripts CS6/InDesign"
+        mkdir -p "$INDESIGN_CS6_DIR"
+        cp "$SCRIPT_DIR/FontDockAutoActivate_InDesign.jsx" "$INDESIGN_CS6_DIR/"
+        if [ $? -eq 0 ]; then
+            echo "✅ InDesign script installed (CS6 fallback)"
+            INSTALLED=$((INSTALLED + 1))
+        else
+            echo "❌ Failed to install InDesign script"
+        fi
+    fi
+else
+    echo "⚠️  InDesign script not found (skipping)"
+    SKIPPED=$((SKIPPED + 1))
 fi
 
+# ============================================================
+# Summary
+# ============================================================
 echo ""
 echo "========================================="
-echo "✅ Installation Complete!"
+echo "Installation Complete: $INSTALLED installed, $SKIPPED skipped"
 echo "========================================="
 echo ""
-echo "The auto-activation scripts will run automatically when you:"
-echo "  • Open a document in Illustrator"
-echo "  • Open a document in Photoshop"
-echo "  • Open a document in InDesign"
+echo "Auto-activation works via two mechanisms:"
+echo "  • InDesign: startup script runs automatically on document open"
+echo "  • Illustrator/Photoshop: FontDock client monitors open documents"
+echo "    via AppleScript and auto-activates fonts when new docs appear"
 echo ""
 echo "Requirements:"
 echo "  • FontDock macOS client must be running"
-echo "  • FontDock client local API must be on port 8765"
+echo "  • Client auto-detects installed Adobe app versions"
 echo ""
-echo "To uninstall, run: ./uninstall.sh"
-echo "To debug font info, run the DebugFontInfo_*.jsx scripts manually"
+echo "To uninstall: ./uninstall.sh"
+echo "To debug: run DebugFontInfo_*.jsx scripts manually in each app"
