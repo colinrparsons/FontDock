@@ -76,10 +76,10 @@ class LocalDatabase:
         # Get list of font IDs from server
         server_font_ids = [font.get('id') for font in fonts if font.get('id')]
         
-        # Insert or update fonts from server
+        # Insert new fonts or update existing ones (preserving cached/cached_path)
         for font in fonts:
             cursor.execute("""
-                INSERT OR REPLACE INTO fonts 
+                INSERT OR IGNORE INTO fonts 
                 (id, postscript_name, style_name, full_name, filename_original, 
                  family_id, family_name, extension, file_hash_sha256, last_synced)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -93,6 +93,31 @@ class LocalDatabase:
                 font.get('family_name'),
                 font.get('extension'),
                 font.get('file_hash_sha256')
+            ))
+            
+            # Update existing fonts (preserving cached and cached_path)
+            cursor.execute("""
+                UPDATE fonts SET 
+                    postscript_name = ?,
+                    style_name = ?,
+                    full_name = ?,
+                    filename_original = ?,
+                    family_id = ?,
+                    family_name = ?,
+                    extension = ?,
+                    file_hash_sha256 = ?,
+                    last_synced = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (
+                font.get('postscript_name'),
+                font.get('style_name'),
+                font.get('full_name'),
+                font.get('filename_original'),
+                font.get('family_id'),
+                font.get('family_name'),
+                font.get('extension'),
+                font.get('file_hash_sha256'),
+                font.get('id')
             ))
         
         # Delete fonts that no longer exist on server
@@ -194,6 +219,23 @@ class LocalDatabase:
             SELECT * FROM fonts 
             WHERE family_name = ? AND style_name = ?
         """, (family_name, style_name))
+        
+        columns = [desc[0] for desc in cursor.description]
+        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+        conn.close()
+        return results
+    
+    def get_fonts_by_family(self, family_name):
+        """Get all fonts belonging to a family"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT * FROM fonts 
+            WHERE family_name = ?
+            ORDER BY style_name
+        """, (family_name,))
         
         columns = [desc[0] for desc in cursor.description]
         results = [dict(zip(columns, row)) for row in cursor.fetchall()]

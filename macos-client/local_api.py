@@ -145,26 +145,50 @@ class AdobeBridgeHandler(BaseHTTPRequestHandler):
             self.end_headers()
     
     def activate_font_by_family_style(self, family_name, style_name):
-        """Activate font by exact family and style name match - most reliable method"""
+        """Activate the entire font family when any member is missing.
+        InDesign may only report some styles as missing, but activating
+        the whole family ensures all weights are available."""
         if not self.font_manager:
             raise RuntimeError("Font manager not initialized")
         
         import logging
         logger = logging.getLogger(__name__)
         
-        logger.info(f"Searching by family/style: '{family_name}' / '{style_name}'")
-        fonts = self.font_manager.db.search_font_by_family_and_style(family_name, style_name)
-        logger.info(f"Family/style search returned {len(fonts)} results")
+        logger.info(f"Activating family '{family_name}' (triggered by style '{style_name}')")
         
-        if not fonts:
-            raise ValueError(f"Font '{family_name} {style_name}' not found")
+        # Try exact family match first
+        family_fonts = self.font_manager.db.get_fonts_by_family(family_name)
+        logger.info(f"  Family lookup returned {len(family_fonts)} fonts")
         
-        if len(fonts) > 1:
-            raise ValueError(f"Ambiguous font '{family_name} {style_name}' - {len(fonts)} matches found")
+        if not family_fonts:
+            # Fallback: fuzzy search to find the family name in the DB
+            logger.info(f"  Falling back to fuzzy search for family: '{family_name}'")
+            all_matches = self.font_manager.db.search_fonts(family_name)
+            if all_matches:
+                # Get unique family names from results
+                families = set(f.get('family_name', '') for f in all_matches)
+                # Use the first matching family
+                best_family = families.pop() if families else ''
+                if best_family:
+                    family_fonts = self.font_manager.db.get_fonts_by_family(best_family)
+                    logger.info(f"  Fuzzy match found family '{best_family}' with {len(family_fonts)} fonts")
         
-        font = fonts[0]
-        logger.info(f"Activating font: {font['postscript_name']}")
-        return self.font_manager.activate_font(font['id'])
+        if not family_fonts:
+            raise ValueError(f"Font family '{family_name}' not found")
+        
+        # Activate all fonts in the family
+        results = []
+        for font in family_fonts:
+            try:
+                result = self.font_manager.activate_font(font['id'])
+                logger.info(f"  Activated: {font['postscript_name']} - success={result.get('success', False)}")
+                results.append(result)
+            except Exception as e:
+                logger.warning(f"  Failed to activate {font['postscript_name']}: {e}")
+        
+        success_count = sum(1 for r in results if r.get('success', False))
+        logger.info(f"  Family activation complete: {success_count}/{len(family_fonts)} fonts activated")
+        return {'success': success_count > 0, 'family': family_name, 'activated': success_count, 'total': len(family_fonts)}
     
     def activate_font_by_name(self, font_name):
         if not self.font_manager:
@@ -298,11 +322,20 @@ class RequestFileWatcher:
                     filepath = os.path.join(self.REQUEST_DIR, filename)
                     try:
                         with open(filepath, 'r') as f:
-                            data = json.load(f)
+                            raw_content = f.read()
+                        logger.info(f"  Raw request content: {raw_content[:500]}")
+                        try:
+                            data = json.loads(raw_content)
+                        except json.JSONDecodeError as je:
+                            logger.error(f"  Invalid JSON in request file: {je}")
+                            os.remove(filepath)
+                            continue
+                        logger.info(f"  Parsed keys: {list(data.keys())}")
                         
-                        file_path = data.get('file_path', '')
+                        file_path = data.get('file_path', '') or data.get('document_path', '')
                         app_name = data.get('app', 'unknown')
                         font_names_from_app = data.get('font_names', [])
+                        fonts_with_style = data.get('fonts', [])  # InDesign sends [{family, style}]
                         
                         logger.info(f"Request file watcher: processing {filename} from {app_name}")
                         logger.info(f"  File path: {file_path}")
@@ -310,17 +343,38 @@ class RequestFileWatcher:
                         # Determine font names to activate:
                         # - Photoshop sends font_names directly (DOM works in PS)
                         # - Illustrator only sends file_path (DOM fails with GFKU)
+                        # - InDesign sends fonts array with {family, style} objects
                         font_names = []
                         if font_names_from_app:
                             font_names = font_names_from_app
                             logger.info(f"  Using {len(font_names)} font names from {app_name} DOM: {font_names}")
+                        elif fonts_with_style:
+                            # InDesign format: convert {family, style} to "family style" strings
+                            for f in fonts_with_style:
+                                family = f.get('family', '')
+                                style = f.get('style', '')
+                                if family and style:
+                                    font_names.append(f"{family} {style}")
+                                elif family:
+                                    font_names.append(family)
+                            logger.info(f"  Using {len(font_names)} font names from InDesign: {font_names}")
                         elif file_path and os.path.exists(file_path):
                             font_names = AdobeBridgeHandler.extract_fonts_from_file(file_path)
                             logger.info(f"  Extracted {len(font_names)} fonts from file: {font_names}")
                         else:
                             logger.warning(f"  No font names and file not found: {file_path}")
                         
-                        if font_names:
+                        if fonts_with_style:
+                            # InDesign: activate using family+style lookup directly
+                            for f in fonts_with_style:
+                                family = f.get('family', '')
+                                style = f.get('style', '')
+                                try:
+                                    result = self._activate_font_by_family_style(family, style)
+                                    logger.info(f"  Activated: {family} {style} - success={result}")
+                                except Exception as e:
+                                    logger.warning(f"  Failed to activate '{family} {style}': {e}")
+                        elif font_names:
                             for font_name in font_names:
                                 try:
                                     result = self._activate_font(font_name)
@@ -346,6 +400,47 @@ class RequestFileWatcher:
             
             # Poll interval
             threading.Event().wait(self.POLL_INTERVAL)
+    
+    def _activate_font_by_family_style(self, family, style):
+        """Activate the entire font family when any member is missing.
+        InDesign may only report some styles as missing, but activating
+        the whole family ensures all weights are available."""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"Activating family '{family}' (triggered by style '{style}')")
+        
+        # Try exact family match first
+        family_fonts = self.font_manager.db.get_fonts_by_family(family)
+        logger.info(f"  Family lookup returned {len(family_fonts)} fonts")
+        
+        if not family_fonts:
+            # Fallback: fuzzy search to find the family name in the DB
+            logger.info(f"  Falling back to fuzzy search for family: '{family}'")
+            all_matches = self.font_manager.db.search_fonts(family)
+            if all_matches:
+                families = set(f.get('family_name', '') for f in all_matches)
+                best_family = families.pop() if families else ''
+                if best_family:
+                    family_fonts = self.font_manager.db.get_fonts_by_family(best_family)
+                    logger.info(f"  Fuzzy match found family '{best_family}' with {len(family_fonts)} fonts")
+        
+        if not family_fonts:
+            raise ValueError(f"Font family '{family}' not found")
+        
+        # Activate all fonts in the family
+        results = []
+        for font in family_fonts:
+            try:
+                result = self.font_manager.activate_font(font['id'])
+                logger.info(f"  Activated: {font['postscript_name']} - success={result.get('success', False)}")
+                results.append(result)
+            except Exception as e:
+                logger.warning(f"  Failed to activate {font['postscript_name']}: {e}")
+        
+        success_count = sum(1 for r in results if r.get('success', False))
+        logger.info(f"  Family activation complete: {success_count}/{len(family_fonts)} fonts activated")
+        return {'success': success_count > 0, 'family': family, 'activated': success_count, 'total': len(family_fonts)}
     
     def _activate_font(self, font_name):
         """Activate a font using font_manager directly.

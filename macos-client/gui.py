@@ -1,11 +1,13 @@
 import sys
 import os
 import json
+from datetime import datetime
 from pathlib import Path
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QLabel, QTabWidget, QListWidget,
-    QMessageBox, QDialog, QFormLayout, QListWidgetItem, QProgressDialog
+    QMessageBox, QDialog, QFormLayout, QListWidgetItem, QProgressDialog,
+    QComboBox, QCheckBox
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from api_client import FontDockAPI
@@ -78,21 +80,75 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("FontDock Settings")
         self.setModal(True)
-        self.setMinimumWidth(600)  # Make window wider
-        self.setMinimumHeight(300)  # Make window taller
+        self.setMinimumWidth(650)
+        self.setMinimumHeight(450)
         self.settings_file = APP_SUPPORT_DIR / "settings.json"
         self.settings_saved = False
         self.setup_ui()
         self.load_settings()
     
     def setup_ui(self):
-        from PyQt5.QtWidgets import QSpinBox, QCheckBox
+        from PyQt5.QtWidgets import QSpinBox, QCheckBox, QGroupBox
         from animated_toggle import AnimatedToggle
-        layout = QFormLayout()
         
-        self.server_url_input = QLineEdit()
-        self.server_url_input.setPlaceholderText("http://localhost:9998")
-        self.server_url_input.setMinimumWidth(450)  # Wide enough for full text
+        main_layout = QVBoxLayout()
+        
+        # ── Server Group ──────────────────────────
+        server_group = QGroupBox("Server")
+        server_layout = QFormLayout()
+        
+        # Address + Port instead of full URL
+        addr_layout = QHBoxLayout()
+        self.server_address_input = QLineEdit()
+        self.server_address_input.setPlaceholderText("192.168.0.48")
+        self.server_address_input.setMinimumWidth(200)
+        
+        self.server_port_input = QLineEdit()
+        self.server_port_input.setPlaceholderText("8000")
+        self.server_port_input.setMaxLength(5)
+        self.server_port_input.setMaximumWidth(80)
+        
+        addr_layout.addWidget(self.server_address_input)
+        addr_layout.addWidget(QLabel("Port:"))
+        addr_layout.addWidget(self.server_port_input)
+        server_layout.addRow("Address:", addr_layout)
+        
+        # Test connection button + inline result label
+        test_layout = QHBoxLayout()
+        self.test_button = QPushButton("Test Connection")
+        self.test_button.clicked.connect(self.test_connection)
+        self.test_result_label = QLabel("")
+        self.test_result_label.setWordWrap(True)
+        test_layout.addWidget(self.test_button)
+        test_layout.addWidget(self.test_result_label, 1)
+        server_layout.addRow("", test_layout)
+        
+        # Last known good connection info
+        self.last_good_label = QLabel("")
+        self.last_good_label.setStyleSheet("color: #9ca3af; font-style: italic;")
+        server_layout.addRow("", self.last_good_label)
+        
+        server_group.setLayout(server_layout)
+        main_layout.addWidget(server_group)
+        
+        # ── Sync Group ─────────────────────────────
+        sync_group = QGroupBox("Sync")
+        sync_layout = QFormLayout()
+        
+        self.collapse_families_toggle = AnimatedToggle()
+        collapse_layout = QHBoxLayout()
+        collapse_label = QLabel("Collapse Families by Default")
+        collapse_layout.addWidget(collapse_label)
+        collapse_layout.addWidget(self.collapse_families_toggle)
+        collapse_layout.addStretch()
+        sync_layout.addRow("", collapse_layout)
+        
+        sync_group.setLayout(sync_layout)
+        main_layout.addWidget(sync_group)
+        
+        # ── Appearance Group ───────────────────────
+        appearance_group = QGroupBox("Appearance")
+        appearance_layout = QFormLayout()
         
         self.font_size_input = QSpinBox()
         self.font_size_input.setMinimum(8)
@@ -109,127 +165,160 @@ class SettingsDialog(QDialog):
         self.dark_mode_checkbox = QCheckBox()
         self.dark_mode_checkbox.setText("Enable Dark Mode")
         
-        self.collapse_families_toggle = AnimatedToggle()
-        collapse_layout = QHBoxLayout()
-        collapse_label = QLabel("Collapse Families by Default")
-        collapse_layout.addWidget(collapse_label)
-        collapse_layout.addWidget(self.collapse_families_toggle)
-        collapse_layout.addStretch()
+        appearance_layout.addRow("Font Preview Size:", self.font_size_input)
+        appearance_layout.addRow("App Font Size:", self.app_font_size_input)
+        appearance_layout.addRow("", self.dark_mode_checkbox)
         
-        self.preview_text_input = QLineEdit()
-        self.preview_text_input.setPlaceholderText("The quick brown fox jumps over the lazy dog")
-        self.preview_text_input.setMinimumWidth(450)  # Wide enough for full sentence
+        appearance_group.setLayout(appearance_layout)
+        main_layout.addWidget(appearance_group)
         
-        # Server URL with test button
-        server_layout = QHBoxLayout()
-        server_layout.addWidget(self.server_url_input)
-        self.test_button = QPushButton("Test Connection")
-        self.test_button.clicked.connect(self.test_connection)
-        server_layout.addWidget(self.test_button)
-        
-        layout.addRow("Server URL:", server_layout)
-        layout.addRow("Font Preview Size:", self.font_size_input)
-        layout.addRow("App Font Size:", self.app_font_size_input)
-        layout.addRow("Preview Text:", self.preview_text_input)
-        layout.addRow("", self.dark_mode_checkbox)
-        layout.addRow("", collapse_layout)
-        
+        # ── Buttons ────────────────────────────────
+        main_layout.addStretch()
         button_layout = QHBoxLayout()
         self.save_button = QPushButton("Save")
         self.cancel_button = QPushButton("Cancel")
         
-        # Make both buttons have the same appearance
         self.save_button.setAutoDefault(False)
         self.save_button.setDefault(False)
         
         self.save_button.clicked.connect(self.save_and_accept)
         self.cancel_button.clicked.connect(self.reject)
         
+        button_layout.addStretch()
         button_layout.addWidget(self.save_button)
         button_layout.addWidget(self.cancel_button)
         
-        layout.addRow(button_layout)
-        self.setLayout(layout)
+        main_layout.addLayout(button_layout)
+        self.setLayout(main_layout)
+    
+    def _parse_url(self, url):
+        """Parse a URL like http://192.168.0.48:8000 into (address, port)."""
+        url = url.strip()
+        # Remove protocol prefix
+        for prefix in ['https://', 'http://']:
+            if url.startswith(prefix):
+                url = url[len(prefix):]
+                break
+        # Split address:port
+        if ':' in url:
+            parts = url.split(':', 1)
+            return parts[0], parts[1]
+        return url, '8000'
+    
+    def _build_url(self):
+        """Build a full URL from address and port fields."""
+        addr = self.server_address_input.text().strip()
+        port = self.server_port_input.text().strip() or '8000'
+        if not addr:
+            return ''
+        return f"http://{addr}:{port}"
     
     def load_settings(self):
         if self.settings_file.exists():
             with open(self.settings_file, 'r') as f:
                 settings = json.load(f)
-                self.server_url_input.setText(settings.get('server_url', 'http://localhost:9998'))
+                url = settings.get('server_url', 'http://localhost:9998')
+                addr, port = self._parse_url(url)
+                self.server_address_input.setText(addr)
+                self.server_port_input.setText(port)
                 self.font_size_input.setValue(settings.get('font_size', 14))
                 self.app_font_size_input.setValue(settings.get('app_font_size', 12))
-                self.preview_text_input.setText(settings.get('preview_text', 'The quick brown fox jumps over the lazy dog'))
                 self.dark_mode_checkbox.setChecked(settings.get('dark_mode', False))
                 self.collapse_families_toggle.setChecked(settings.get('collapse_families', True))
+                
+                # Show last known good URL
+                last_good = settings.get('last_known_good_url', '')
+                if last_good:
+                    self.last_good_label.setText(f"Last known good: {last_good}")
         else:
-            self.server_url_input.setText('http://localhost:9998')
+            self.server_address_input.setText('localhost')
+            self.server_port_input.setText('9998')
             self.font_size_input.setValue(14)
             self.app_font_size_input.setValue(12)
-            self.preview_text_input.setText('The quick brown fox jumps over the lazy dog')
             self.dark_mode_checkbox.setChecked(False)
-            self.collapse_families_toggle.setChecked(True)  # Default to collapsed
+            self.collapse_families_toggle.setChecked(True)
     
     def test_connection(self):
-        """Test connection to server."""
+        """Test connection with multi-check and inline result."""
         import requests
-        server_url = self.server_url_input.text().strip()
+        server_url = self._build_url()
         
         if not server_url:
-            QMessageBox.warning(self, "Error", "Please enter a server URL")
+            self.test_result_label.setText("❌ Enter server address")
+            self.test_result_label.setStyleSheet("color: #ef4444;")
             return
         
+        self.test_result_label.setText("Testing...")
+        self.test_result_label.setStyleSheet("color: #f97316;")
+        QApplication.processEvents()
+        
         try:
-            # Test health endpoint
+            # Check 1: Health endpoint
             response = requests.get(f"{server_url}/health", timeout=5)
-            if response.status_code == 200:
-                QMessageBox.information(
-                    self, 
-                    "Connection Successful", 
-                    f"✓ Connected to FontDock server\n\nServer: {server_url}\nStatus: {response.json().get('status', 'unknown')}"
+            if response.status_code != 200:
+                self.test_result_label.setText(f"❌ Server responded with status {response.status_code}")
+                self.test_result_label.setStyleSheet("color: #ef4444;")
+                return
+            
+            # Check 2: Font API availability
+            font_count = None
+            try:
+                font_response = requests.get(
+                    f"{server_url}/api/fonts",
+                    params={"page_size": 1},
+                    timeout=5
                 )
-            else:
-                QMessageBox.warning(
-                    self, 
-                    "Connection Failed", 
-                    f"Server responded with status code: {response.status_code}"
-                )
+                if font_response.status_code == 200:
+                    data = font_response.json()
+                    font_count = data.get('total', None)
+            except Exception:
+                pass
+            
+            # Build result message
+            msg = f"✅ Connected"
+            if font_count is not None:
+                msg += f" — {font_count} fonts available"
+            self.test_result_label.setText(msg)
+            self.test_result_label.setStyleSheet("color: #22c55e;")
+            
+            # Update last known good
+            self.last_good_label.setText(f"Last known good: {server_url}")
+            
         except requests.exceptions.ConnectionError:
-            QMessageBox.critical(
-                self, 
-                "Connection Failed", 
-                f"Cannot connect to server at:\n{server_url}\n\nPlease check:\n• Server is running\n• URL is correct\n• Network connection"
-            )
+            self.test_result_label.setText("❌ Cannot reach server — check address and network")
+            self.test_result_label.setStyleSheet("color: #ef4444;")
         except requests.exceptions.Timeout:
-            QMessageBox.critical(
-                self, 
-                "Connection Timeout", 
-                f"Connection to server timed out:\n{server_url}"
-            )
+            self.test_result_label.setText("❌ Connection timed out")
+            self.test_result_label.setStyleSheet("color: #ef4444;")
         except Exception as e:
-            QMessageBox.critical(
-                self, 
-                "Connection Error", 
-                f"Error connecting to server:\n{str(e)}"
-            )
+            self.test_result_label.setText(f"❌ Error: {str(e)}")
+            self.test_result_label.setStyleSheet("color: #ef4444;")
     
     def save_and_accept(self):
-        settings = {
-            'server_url': self.server_url_input.text(),
-            'font_size': self.font_size_input.value(),
-            'app_font_size': self.app_font_size_input.value(),
-            'preview_text': self.preview_text_input.text(),
-            'dark_mode': self.dark_mode_checkbox.isChecked(),
-            'collapse_families': self.collapse_families_toggle.isChecked()
-        }
+        server_url = self._build_url()
+        
+        # Load existing settings to preserve keys we don't edit
+        settings = {}
+        if self.settings_file.exists():
+            with open(self.settings_file, 'r') as f:
+                settings = json.load(f)
+        
+        settings['server_url'] = server_url
+        settings['server_address'] = self.server_address_input.text().strip()
+        settings['server_port'] = self.server_port_input.text().strip() or '8000'
+        settings['font_size'] = self.font_size_input.value()
+        settings['app_font_size'] = self.app_font_size_input.value()
+        settings['dark_mode'] = self.dark_mode_checkbox.isChecked()
+        settings['collapse_families'] = self.collapse_families_toggle.isChecked()
+        
         with open(self.settings_file, 'w') as f:
             json.dump(settings, f, indent=2)
         
-        # Signal that settings were saved
         self.settings_saved = True
         self.accept()
     
     def get_server_url(self):
-        return self.server_url_input.text()
+        return self._build_url()
     
     def get_font_size(self):
         return self.font_size_input.value()
@@ -245,23 +334,57 @@ class LoginDialog(QDialog):
         self.setup_ui()
         self.load_server_url()
     
+    def _parse_url(self, url):
+        url = url.strip()
+        for prefix in ['https://', 'http://']:
+            if url.startswith(prefix):
+                url = url[len(prefix):]
+                break
+        if ':' in url:
+            parts = url.split(':', 1)
+            return parts[0], parts[1]
+        return url, '8000'
+    
+    def _build_url(self):
+        addr = self.server_address_input.text().strip()
+        port = self.server_port_input.text().strip() or '8000'
+        if not addr:
+            return ''
+        return f"http://{addr}:{port}"
+    
     def setup_ui(self):
         layout = QFormLayout()
         
-        # Server URL with test button
-        self.server_url_input = QLineEdit()
-        self.server_url_input.setPlaceholderText("http://192.168.0.48:8000")
-        server_layout = QHBoxLayout()
-        server_layout.addWidget(self.server_url_input)
+        # Server address + port
+        addr_layout = QHBoxLayout()
+        self.server_address_input = QLineEdit()
+        self.server_address_input.setPlaceholderText("192.168.0.48")
+        self.server_address_input.setMinimumWidth(200)
+        
+        self.server_port_input = QLineEdit()
+        self.server_port_input.setPlaceholderText("8000")
+        self.server_port_input.setMaxLength(5)
+        self.server_port_input.setMaximumWidth(80)
+        
         self.test_button = QPushButton("Test")
         self.test_button.clicked.connect(self.test_connection)
-        server_layout.addWidget(self.test_button)
+        
+        addr_layout.addWidget(self.server_address_input)
+        addr_layout.addWidget(QLabel("Port:"))
+        addr_layout.addWidget(self.server_port_input)
+        addr_layout.addWidget(self.test_button)
+        
+        # Inline test result
+        self.test_result_label = QLabel("")
+        self.test_result_label.setWordWrap(True)
+        
+        layout.addRow("Server:", addr_layout)
+        layout.addRow("", self.test_result_label)
         
         self.username_input = QLineEdit()
         self.password_input = QLineEdit()
         self.password_input.setEchoMode(QLineEdit.Password)
         
-        layout.addRow("Server URL:", server_layout)
         layout.addRow("Username:", self.username_input)
         layout.addRow("Password:", self.password_input)
         
@@ -283,55 +406,66 @@ class LoginDialog(QDialog):
         if self.settings_file.exists():
             with open(self.settings_file, 'r') as f:
                 settings = json.load(f)
-                self.server_url_input.setText(settings.get('server_url', 'http://localhost:9998'))
+                url = settings.get('server_url', 'http://localhost:9998')
+                addr, port = self._parse_url(url)
+                self.server_address_input.setText(addr)
+                self.server_port_input.setText(port)
         else:
-            self.server_url_input.setText('http://localhost:9998')
+            self.server_address_input.setText('localhost')
+            self.server_port_input.setText('9998')
     
     def test_connection(self):
-        """Test connection to server."""
+        """Test connection with inline result."""
         import requests
-        server_url = self.server_url_input.text().strip()
+        server_url = self._build_url()
         
         if not server_url:
-            QMessageBox.warning(self, "Error", "Please enter a server URL")
+            self.test_result_label.setText("❌ Enter server address")
+            self.test_result_label.setStyleSheet("color: #ef4444;")
             return
+        
+        self.test_result_label.setText("Testing...")
+        self.test_result_label.setStyleSheet("color: #f97316;")
+        QApplication.processEvents()
         
         try:
             response = requests.get(f"{server_url}/health", timeout=5)
             if response.status_code == 200:
-                QMessageBox.information(
-                    self, 
-                    "Connection Successful", 
-                    f"✓ Connected to FontDock server\n\nServer: {server_url}\nStatus: {response.json().get('status', 'unknown')}"
-                )
+                # Also check font count
+                font_count = None
+                try:
+                    font_response = requests.get(
+                        f"{server_url}/api/fonts",
+                        params={"page_size": 1},
+                        timeout=5
+                    )
+                    if font_response.status_code == 200:
+                        data = font_response.json()
+                        font_count = data.get('total', None)
+                except Exception:
+                    pass
+                
+                msg = "✅ Connected"
+                if font_count is not None:
+                    msg += f" — {font_count} fonts available"
+                self.test_result_label.setText(msg)
+                self.test_result_label.setStyleSheet("color: #22c55e;")
             else:
-                QMessageBox.warning(
-                    self, 
-                    "Connection Failed", 
-                    f"Server responded with status code: {response.status_code}"
-                )
+                self.test_result_label.setText(f"❌ Server error: {response.status_code}")
+                self.test_result_label.setStyleSheet("color: #ef4444;")
         except requests.exceptions.ConnectionError:
-            QMessageBox.critical(
-                self, 
-                "Connection Failed", 
-                f"Cannot connect to server at:\n{server_url}\n\nPlease check:\n• Server is running\n• URL is correct\n• Network connection"
-            )
+            self.test_result_label.setText("❌ Cannot reach server")
+            self.test_result_label.setStyleSheet("color: #ef4444;")
         except requests.exceptions.Timeout:
-            QMessageBox.critical(
-                self, 
-                "Connection Timeout", 
-                f"Connection to server timed out:\n{server_url}"
-            )
+            self.test_result_label.setText("❌ Connection timed out")
+            self.test_result_label.setStyleSheet("color: #ef4444;")
         except Exception as e:
-            QMessageBox.critical(
-                self, 
-                "Connection Error", 
-                f"Error connecting to server:\n{str(e)}"
-            )
+            self.test_result_label.setText(f"❌ Error: {str(e)}")
+            self.test_result_label.setStyleSheet("color: #ef4444;")
     
     def save_and_login(self):
         """Save server URL and proceed with login."""
-        server_url = self.server_url_input.text().strip()
+        server_url = self._build_url()
         
         # Save server URL to settings
         if self.settings_file.exists():
@@ -341,6 +475,8 @@ class LoginDialog(QDialog):
             settings = {}
         
         settings['server_url'] = server_url
+        settings['server_address'] = self.server_address_input.text().strip()
+        settings['server_port'] = self.server_port_input.text().strip() or '8000'
         
         with open(self.settings_file, 'w') as f:
             json.dump(settings, f, indent=2)
@@ -355,7 +491,7 @@ class LoginDialog(QDialog):
         return self.username_input.text(), self.password_input.text()
     
     def get_server_url(self):
-        return self.server_url_input.text().strip()
+        return self._build_url()
 
 
 class MainWindow(QMainWindow):
@@ -393,7 +529,15 @@ class MainWindow(QMainWindow):
             self.login_successful = self.show_login()
         else:
             self.setup_ui()
-            self.sync_metadata()
+            # Try to sync, but work offline if server is unreachable
+            try:
+                self.sync_metadata()
+            except Exception as e:
+                self._set_connection_state("disconnected")
+                self.status_bar.showMessage(f"Working offline — server unreachable: {e}", 5000)
+                # Still load fonts from local DB
+                self.load_all_fonts()
+                self.load_recent()
             self.login_successful = True
     
     def create_menu_bar(self):
@@ -671,6 +815,42 @@ class MainWindow(QMainWindow):
                             background-color: #2a2a2a;
                             color: #ffffff;
                         }
+                        QComboBox {
+                            background-color: #2a2a2a;
+                            color: #ffffff;
+                            border: 1px solid #3a3a3a;
+                            padding: 3px 8px;
+                            border-radius: 4px;
+                        }
+                        QComboBox::drop-down {
+                            border: none;
+                        }
+                        QComboBox QAbstractItemView {
+                            background-color: #2a2a2a;
+                            color: #ffffff;
+                            selection-background-color: #4dd0e1;
+                        }
+                        QCheckBox {
+                            color: #ffffff;
+                            spacing: 5px;
+                        }
+                        QCheckBox::indicator {
+                            width: 16px;
+                            height: 16px;
+                        }
+                        QGroupBox {
+                            color: #ffffff;
+                            border: 1px solid #3a3a3a;
+                            border-radius: 6px;
+                            margin-top: 12px;
+                            padding-top: 16px;
+                            font-weight: bold;
+                        }
+                        QGroupBox::title {
+                            subcontrol-origin: margin;
+                            left: 12px;
+                            padding: 0 6px;
+                        }
                     """)
                 else:
                     self.setStyleSheet("")  # Reset to default
@@ -714,9 +894,34 @@ class MainWindow(QMainWindow):
         
         layout = QVBoxLayout()
         
-        # Add status bar
+        # Add status bar with permanent indicators
         self.status_bar = self.statusBar()
         self.status_bar.showMessage("Ready")
+        
+        # Connection state indicator
+        self.connection_label = QLabel("● Disconnected")
+        self.connection_label.setStyleSheet("color: #ef4444; font-weight: bold; padding: 0 8px;")
+        self.status_bar.addPermanentWidget(self.connection_label)
+        
+        # Last sync indicator
+        self.last_sync_label = QLabel("Last sync: never")
+        self.last_sync_label.setStyleSheet("color: #9ca3af; padding: 0 8px;")
+        self.status_bar.addPermanentWidget(self.last_sync_label)
+        
+        # Cache count indicator
+        self.cache_count_label = QLabel("0 fonts cached")
+        self.cache_count_label.setStyleSheet("color: #9ca3af; padding: 0 8px;")
+        self.status_bar.addPermanentWidget(self.cache_count_label)
+        
+        # Timer to refresh "last sync" relative time
+        from PyQt5.QtCore import QTimer
+        self._sync_refresh_timer = QTimer()
+        self._sync_refresh_timer.timeout.connect(self._refresh_sync_time)
+        self._sync_refresh_timer.start(60000)  # Every 60s
+        
+        # Store last sync time
+        self._last_sync_time = None
+        self._load_last_sync_time()
         
         top_bar = QHBoxLayout()
         
@@ -773,16 +978,19 @@ class MainWindow(QMainWindow):
         self.collections_tab = QWidget()
         self.clients_tab = QWidget()
         self.recent_tab = QWidget()
+        self.system_fonts_tab = QWidget()
         
         self.setup_fonts_tab()
         self.setup_collections_tab()
         self.setup_clients_tab()
         self.setup_recent_tab()
+        self.setup_system_fonts_tab()
         
         self.tabs.addTab(self.fonts_tab, "Fonts")
         self.tabs.addTab(self.collections_tab, "Collections")
         self.tabs.addTab(self.clients_tab, "Clients")
         self.tabs.addTab(self.recent_tab, "Recent")
+        self.tabs.addTab(self.system_fonts_tab, "System Fonts")
         
         # Refresh icons when switching tabs (to show fonts activated via InDesign)
         self.tabs.currentChanged.connect(self.on_tab_changed)
@@ -793,6 +1001,50 @@ class MainWindow(QMainWindow):
     
     def setup_fonts_tab(self):
         layout = QVBoxLayout()
+        
+        # Preview text bar (Feature 5)
+        preview_bar = QHBoxLayout()
+        preview_label = QLabel("Preview:")
+        self.preview_input = QLineEdit()
+        self.preview_input.setText(self.get_preview_text())
+        self.preview_input.setPlaceholderText("Type custom preview text...")
+        self.preview_input.textChanged.connect(self.on_preview_text_changed)
+        
+        self.preview_preset_combo = QComboBox()
+        self.preview_preset_combo.setMinimumWidth(160)
+        self._load_preview_presets()
+        self.preview_preset_combo.currentTextChanged.connect(self.on_preset_selected)
+        
+        save_preset_btn = QPushButton("Save Preset")
+        save_preset_btn.clicked.connect(self.on_save_preset)
+        
+        preview_bar.addWidget(preview_label)
+        preview_bar.addWidget(self.preview_input, 1)
+        preview_bar.addWidget(self.preview_preset_combo)
+        preview_bar.addWidget(save_preset_btn)
+        layout.addLayout(preview_bar)
+        
+        # Filter bar (Feature 2)
+        filter_bar = QHBoxLayout()
+        self.filter_active_cb = QCheckBox("Activated Only")
+        self.filter_active_cb.stateChanged.connect(self.apply_filters)
+        self.filter_recent_cb = QCheckBox("Recently Used")
+        self.filter_recent_cb.stateChanged.connect(self.apply_filters)
+        filter_bar.addWidget(QLabel("Filters:"))
+        filter_bar.addWidget(self.filter_active_cb)
+        filter_bar.addWidget(self.filter_recent_cb)
+        
+        filter_bar.addWidget(QLabel("Collection:"))
+        self.filter_collection_combo = QComboBox()
+        self.filter_collection_combo.setMinimumWidth(150)
+        self.filter_collection_combo.addItem("All", None)
+        collections = self.db.get_all_collections()
+        for coll in collections:
+            self.filter_collection_combo.addItem(coll['name'], coll['id'])
+        self.filter_collection_combo.currentIndexChanged.connect(self.apply_filters)
+        filter_bar.addWidget(self.filter_collection_combo)
+        filter_bar.addStretch()
+        layout.addLayout(filter_bar)
         
         self.fonts_list = QListWidget()
         self.fonts_list.setSelectionMode(QListWidget.ExtendedSelection)  # Enable multi-select
@@ -806,8 +1058,12 @@ class MainWindow(QMainWindow):
         deactivate_button = QPushButton(self.delete_icon, "Deactivate Selected")
         deactivate_button.clicked.connect(self.on_font_deactivate_button)
         
+        compare_button = QPushButton("Compare")
+        compare_button.clicked.connect(self.on_compare_fonts)
+        
         button_layout.addWidget(activate_button)
         button_layout.addWidget(deactivate_button)
+        button_layout.addWidget(compare_button)
         
         layout.addWidget(self.fonts_list)
         layout.addLayout(button_layout)
@@ -926,8 +1182,165 @@ class MainWindow(QMainWindow):
         
         self.load_recent()
     
+    def setup_system_fonts_tab(self):
+        """Tab showing all system-installed fonts (not FontDock-managed)."""
+        layout = QVBoxLayout()
+        
+        # Search bar for system fonts
+        sys_search_bar = QHBoxLayout()
+        self.system_font_search = QLineEdit()
+        self.system_font_search.setPlaceholderText("Search system fonts...")
+        self.system_font_search.textChanged.connect(self.on_system_font_search)
+        sys_search_bar.addWidget(self.system_font_search)
+        layout.addLayout(sys_search_bar)
+        
+        # Info label
+        info_label = QLabel("System-installed fonts — available to all applications. Not managed by FontDock.")
+        info_label.setWordWrap(True)
+        info_label.setStyleSheet("color: #9ca3af; font-style: italic; padding: 4px;")
+        layout.addWidget(info_label)
+        
+        self.system_fonts_list = QListWidget()
+        self.system_fonts_list.setSelectionMode(QListWidget.SingleSelection)
+        self.system_fonts_list.setSpacing(2)
+        layout.addWidget(self.system_fonts_list)
+        
+        # Count label
+        self.system_font_count_label = QLabel("")
+        self.system_font_count_label.setStyleSheet("color: #9ca3af; padding: 4px;")
+        layout.addWidget(self.system_font_count_label)
+        
+        self.system_fonts_tab.setLayout(layout)
+        
+        # Load system fonts
+        self._system_font_families = []
+        self._load_system_fonts()
+    
+    def _load_system_fonts(self):
+        """Enumerate system fonts using QFontDatabase and populate the list."""
+        from PyQt5.QtGui import QFontDatabase, QFont, QIcon
+        
+        self.system_fonts_list.clear()
+        font_db = QFontDatabase()
+        families = font_db.families()
+        
+        # Sort families
+        families = sorted(families)
+        self._system_font_families = families
+        
+        collapse_by_default = self.get_collapse_families_setting()
+        preview_text = self.preview_input.text() if hasattr(self, 'preview_input') else "The quick brown fox jumps over the lazy dog"
+        font_size = self.get_font_preview_size()
+        
+        # Icon for individual style items only (green = available/installed)
+        assets_dir = Path(__file__).parent / "assets"
+        sys_icon = QIcon(str(assets_dir / "active.svg"))
+        
+        for family in families:
+            # Get styles for this family
+            styles = font_db.styles(family)
+            style_count = len(styles)
+            
+            # Create family header — NO icon (same as Fonts tab, triangle is in the text)
+            arrow = "▶" if collapse_by_default else "▼"
+            family_text = f"{arrow} {family} ({style_count} style{'s' if style_count != 1 else ''})"
+            family_item = QListWidgetItem(family_text)
+            family_item.setData(Qt.UserRole, None)       # No font ID (system font)
+            family_item.setData(Qt.UserRole + 1, family) # family name (marks as header)
+            family_item.setBackground(Qt.lightGray)
+            family_font = QFont()
+            family_font.setBold(True)
+            family_item.setFont(family_font)
+            self.system_fonts_list.addItem(family_item)
+            
+            # Add individual styles
+            for style in sorted(styles):
+                style_text = f"    {preview_text}    {style}    [System]"
+                style_item = QListWidgetItem(sys_icon, style_text)
+                style_item.setData(Qt.UserRole, family)       # family name for reference
+                style_item.setData(Qt.UserRole + 1, None)     # None = not a header
+                style_item.setData(Qt.UserRole + 2, style)
+                
+                # Apply the actual font
+                try:
+                    custom_font = font_db.font(family, style, font_size)
+                    style_item.setFont(custom_font)
+                except Exception:
+                    pass
+                
+                self.system_fonts_list.addItem(style_item)
+                # Set hidden AFTER adding to ensure it takes effect
+                style_item.setHidden(collapse_by_default)
+        
+        self.system_font_count_label.setText(f"{len(families)} font families installed on system")
+        
+        # Connect click handler for expand/collapse
+        try:
+            self.system_fonts_list.itemClicked.disconnect(self._on_system_font_clicked)
+        except Exception:
+            pass
+        self.system_fonts_list.itemClicked.connect(self._on_system_font_clicked)
+    
+    def _on_system_font_clicked(self, item):
+        """Toggle expand/collapse of system font family."""
+        family_name = item.data(Qt.UserRole + 1)
+        if not family_name:
+            return
+        
+        is_expanded = item.text().startswith("▼")
+        
+        if is_expanded:
+            item.setText(item.text().replace("▼", "▶"))
+        else:
+            item.setText(item.text().replace("▶", "▼"))
+        
+        # Toggle visibility of child styles
+        row = self.system_fonts_list.row(item)
+        for i in range(row + 1, self.system_fonts_list.count()):
+            child = self.system_fonts_list.item(i)
+            if child.data(Qt.UserRole + 1) is not None:  # Next family header
+                break
+            child.setHidden(is_expanded)
+    
+    def on_system_font_search(self, text):
+        """Filter system fonts by search text."""
+        if len(text) < 2:
+            # Reset to collapse setting
+            collapse = self.get_collapse_families_setting()
+            for i in range(self.system_fonts_list.count()):
+                item = self.system_fonts_list.item(i)
+                family = item.data(Qt.UserRole + 1)
+                if family:  # Family header
+                    item.setHidden(False)
+                    arrow = "▶" if collapse else "▼"
+                    current = item.text()
+                    if current.startswith("▶") or current.startswith("▼"):
+                        current = arrow + current[1:]
+                    item.setText(current)
+                else:
+                    item.setHidden(collapse)
+            return
+        
+        text_lower = text.lower()
+        for i in range(self.system_fonts_list.count()):
+            item = self.system_fonts_list.item(i)
+            family = item.data(Qt.UserRole + 1)
+            if family:
+                matches = text_lower in family.lower()
+                item.setHidden(not matches)
+                # If matching, auto-expand styles
+                if matches:
+                    item.setText(item.text().replace("▶", "▼"))
+                    for j in range(i + 1, self.system_fonts_list.count()):
+                        child = self.system_fonts_list.item(j)
+                        if child.data(Qt.UserRole + 1) is not None:
+                            break
+                        child.setHidden(False)
+                else:
+                    item.setText(item.text().replace("▼", "▶"))
+    
     def load_all_fonts(self):
-        """Load all fonts grouped by family with preview text."""
+        """Load all fonts grouped by family with preview text, status icons, and state badges."""
         # Check if families should be collapsed by default
         collapse_by_default = self.get_collapse_families_setting()
         
@@ -940,7 +1353,7 @@ class MainWindow(QMainWindow):
         """)
         
         from collections import defaultdict
-        from PyQt5.QtGui import QFont, QFontDatabase
+        from PyQt5.QtGui import QFont, QFontDatabase, QIcon
         families = defaultdict(list)
         
         for row in cursor.fetchall():
@@ -957,15 +1370,45 @@ class MainWindow(QMainWindow):
         
         conn.close()
         
-        # Track loaded fonts to avoid duplicates
-        loaded_fonts = {}
+        # Load all status icons once
+        assets_dir = Path(__file__).parent / "assets"
+        active_icon = QIcon(str(assets_dir / "active.svg"))
+        inactive_icon = QIcon(str(assets_dir / "inactive.svg"))
+        cached_icon = QIcon(str(assets_dir / "cached.svg"))
+        remote_icon = QIcon(str(assets_dir / "remote.svg"))
+        
+        # Get preview text from inline input if available, else settings
+        preview_text = self.preview_input.text() if hasattr(self, 'preview_input') else self.get_preview_text()
+        
+        # Get filter data
+        active_font_ids = set()
+        if hasattr(self, 'filter_active_cb') and self.filter_active_cb.isChecked():
+            for i in range(self.fonts_list.count() if self.fonts_list.count() > 0 else 0):
+                pass  # Will filter after loading
+        
+        recent_font_ids = set()
+        if hasattr(self, 'filter_recent_cb') and self.filter_recent_cb.isChecked():
+            recent = self.db.get_recent_activations()
+            recent_font_ids = set(f.get('id') for f in recent)
+        
+        collection_font_ids = None
+        if hasattr(self, 'filter_collection_combo'):
+            coll_data = self.filter_collection_combo.currentData()
+            if coll_data is not None:
+                coll_fonts = self.db.get_collection_fonts(coll_data)
+                collection_font_ids = set(f['id'] for f in coll_fonts)
         
         self.fonts_list.clear()
         for family_name in sorted(families.keys()):
             fonts = families[family_name]
             format_type = 'TrueType' if fonts[0]['extension'] in ['.ttf', '.ttc'] else 'OpenType' if fonts[0]['extension'] == '.otf' else 'Unknown'
             
-            family_item = QListWidgetItem(f"▶ {family_name} ({len(fonts)} styles) - {format_type}")
+            # Count active fonts in family
+            user_fonts_dir = get_fonts_dir()
+            active_count = sum(1 for f in fonts if (user_fonts_dir / f['filename']).exists())
+            total_count = len(fonts)
+            
+            family_item = QListWidgetItem(f"▶ {family_name} ({active_count}/{total_count} active) - {format_type}")
             family_item.setData(Qt.UserRole, None)
             family_item.setData(Qt.UserRole + 1, family_name)
             family_item.setBackground(Qt.lightGray)
@@ -975,48 +1418,78 @@ class MainWindow(QMainWindow):
                 style = font['style_name'] or 'Regular'
                 font_format = 'TrueType' if font['extension'] in ['.ttf', '.ttc'] else 'OpenType' if font['extension'] == '.otf' else font['extension']
                 
-                # Check if font is activated (exists in user fonts directory)
-                user_fonts_dir = get_fonts_dir()
+                # Determine font state (Feature 4)
                 is_activated = (user_fonts_dir / font['filename']).exists()
+                is_cached = font['cached_path'] and os.path.exists(font['cached_path'])
                 
-                # Create preview text in actual font with consistent indentation
-                preview_text = self.get_preview_text()
-                item_text = f"    {preview_text}    {style}    {font_format}"
+                if is_activated:
+                    state_tag = "Local"
+                    state_icon = active_icon
+                elif is_cached:
+                    state_tag = "Cached"
+                    state_icon = cached_icon
+                else:
+                    state_tag = "Remote"
+                    state_icon = remote_icon
+                
+                # Apply filters
+                should_hide = False
+                if hasattr(self, 'filter_active_cb') and self.filter_active_cb.isChecked():
+                    if not is_activated:
+                        should_hide = True
+                if hasattr(self, 'filter_recent_cb') and self.filter_recent_cb.isChecked():
+                    if font['id'] not in recent_font_ids:
+                        should_hide = True
+                if collection_font_ids is not None:
+                    if font['id'] not in collection_font_ids:
+                        should_hide = True
+                
+                # Create preview text with state badge
+                item_text = f"    {preview_text}    {style}    {font_format}    [{state_tag}]"
                 item = QListWidgetItem(item_text)
                 
-                # Add status icon
-                from PyQt5.QtGui import QIcon
-                icon_path = "assets/active.svg" if is_activated else "assets/inactive.svg"
-                if os.path.exists(icon_path):
-                    item.setIcon(QIcon(icon_path))
+                # Set status icon
+                item.setIcon(state_icon)
                 
                 item.setData(Qt.UserRole, font['id'])
                 item.setData(Qt.UserRole + 1, None)
                 item.setData(Qt.UserRole + 2, font['cached_path'])
+                item.setData(Qt.UserRole + 3, state_tag)  # Store state for filtering
                 
                 # Load and apply the actual font if cached
                 if font['cached_path'] and os.path.exists(font['cached_path']):
-                    # Load each font file (Qt handles duplicates internally)
                     font_id_qt = QFontDatabase.addApplicationFont(font['cached_path'])
                     if font_id_qt != -1:
-                        # Get all font families from this file
                         font_families_qt = QFontDatabase.applicationFontFamilies(font_id_qt)
                         if font_families_qt:
                             font_size = self.get_font_preview_size()
-                            # Use the first family from the file
                             custom_font = QFont(font_families_qt[0], font_size)
-                            
-                            # Set the exact style using PostScript name if available
                             if font['ps_name']:
-                                # Try to use the PostScript name for exact matching
                                 custom_font.setFamily(font_families_qt[0])
                                 custom_font.setStyleName(style)
-                            
                             item.setFont(custom_font)
                 
-                # Hide based on setting (True = collapsed, False = expanded)
+                # Hide based on filter or collapse setting
                 self.fonts_list.addItem(item)
-                item.setHidden(collapse_by_default)
+                # If any filter is active, show matching fonts (override collapse)
+                any_filter_active = (
+                    (hasattr(self, 'filter_active_cb') and self.filter_active_cb.isChecked()) or
+                    (hasattr(self, 'filter_recent_cb') and self.filter_recent_cb.isChecked()) or
+                    collection_font_ids is not None
+                )
+                if should_hide:
+                    item.setHidden(True)
+                elif any_filter_active:
+                    item.setHidden(False)  # Show matching items even if collapsed by default
+                else:
+                    item.setHidden(collapse_by_default)
+        
+        # If filtering, auto-expand family headers with visible children and hide empty ones
+        if (hasattr(self, 'filter_active_cb') and self.filter_active_cb.isChecked()) or \
+           (hasattr(self, 'filter_recent_cb') and self.filter_recent_cb.isChecked()) or \
+           collection_font_ids is not None:
+            self._hide_empty_families()
+            self._expand_families_with_visible_children()
         
         # Disconnect and reconnect to avoid duplicate connections
         try:
@@ -1024,6 +1497,356 @@ class MainWindow(QMainWindow):
         except:
             pass
         self.fonts_list.itemClicked.connect(self.on_font_list_clicked)
+    
+    def _hide_empty_families(self):
+        """Hide family headers that have no visible children."""
+        for i in range(self.fonts_list.count()):
+            item = self.fonts_list.item(i)
+            family_name = item.data(Qt.UserRole + 1)
+            if family_name:
+                # Check if any child fonts are visible
+                has_visible = False
+                j = i + 1
+                while j < self.fonts_list.count():
+                    child = self.fonts_list.item(j)
+                    if child.data(Qt.UserRole + 1):  # Next family header
+                        break
+                    if not child.isHidden():
+                        has_visible = True
+                        break
+                    j += 1
+                item.setHidden(not has_visible)
+    
+    def _expand_families_with_visible_children(self):
+        """Auto-expand family headers that have visible children (for filtering)."""
+        for i in range(self.fonts_list.count()):
+            item = self.fonts_list.item(i)
+            family_name = item.data(Qt.UserRole + 1)
+            if family_name and not item.isHidden():
+                # If header shows ▶ (collapsed), switch to ▼ (expanded)
+                text = item.text()
+                if text.startswith("▶"):
+                    item.setText(text.replace("▶", "▼", 1))
+    
+    def apply_filters(self):
+        """Re-apply filters to the font list without full reload."""
+        self.load_all_fonts()
+    
+    def _refresh_collection_filter(self):
+        """Refresh the collection filter combo box with current collections."""
+        if not hasattr(self, 'filter_collection_combo'):
+            return
+        current_data = self.filter_collection_combo.currentData()
+        self.filter_collection_combo.clear()
+        self.filter_collection_combo.addItem("All", None)
+        collections = self.db.get_all_collections()
+        for coll in collections:
+            self.filter_collection_combo.addItem(coll['name'], coll['id'])
+        # Restore previous selection if possible
+        if current_data is not None:
+            for i in range(self.filter_collection_combo.count()):
+                if self.filter_collection_combo.itemData(i) == current_data:
+                    self.filter_collection_combo.setCurrentIndex(i)
+                    break
+    
+    def on_preview_text_changed(self, text):
+        """Update preview text in font list with debounce."""
+        # Debounce: reload after 500ms of no typing
+        if hasattr(self, '_preview_timer'):
+            self._preview_timer.stop()
+        else:
+            from PyQt5.QtCore import QTimer
+            self._preview_timer = QTimer()
+            self._preview_timer.setSingleShot(True)
+            self._preview_timer.timeout.connect(self._apply_preview_text)
+        self._preview_timer.start(500)
+    
+    def _apply_preview_text(self):
+        """Apply the debounced preview text change."""
+        text = self.preview_input.text()
+        # Save to settings
+        settings_file = APP_SUPPORT_DIR / "settings.json"
+        settings = {}
+        if settings_file.exists():
+            with open(settings_file, 'r') as f:
+                settings = json.load(f)
+        settings['preview_text'] = text
+        with open(settings_file, 'w') as f:
+            json.dump(settings, f, indent=2)
+        
+        # Reload fonts with new preview text
+        self.load_all_fonts()
+    
+    def _load_preview_presets(self):
+        """Load preview text presets into combo box."""
+        self.preview_preset_combo.clear()
+        self.preview_preset_combo.addItem("Select preset...", "")
+        
+        settings_file = APP_SUPPORT_DIR / "settings.json"
+        settings = {}
+        if settings_file.exists():
+            with open(settings_file, 'r') as f:
+                settings = json.load(f)
+        
+        default_presets = [
+            "The quick brown fox jumps over the lazy dog",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "abcdefghijklmnopqrstuvwxyz",
+            "0123456789",
+            "ABCDEFGHIJKLM NOPQRSTUVWXYZ",
+            "abcdefghijklm nopqrstuvwxyz",
+        ]
+        
+        saved_presets = settings.get('preview_presets', [])
+        all_presets = default_presets + [p for p in saved_presets if p not in default_presets]
+        
+        for preset in all_presets:
+            self.preview_preset_combo.addItem(preset[:40] + "..." if len(preset) > 40 else preset, preset)
+    
+    def on_preset_selected(self, display_text):
+        """Apply selected preset to preview input."""
+        idx = self.preview_preset_combo.currentIndex()
+        preset_text = self.preview_preset_combo.itemData(idx)
+        if preset_text:
+            self.preview_input.setText(preset_text)
+    
+    def on_save_preset(self):
+        """Save current preview text as a preset."""
+        text = self.preview_input.text().strip()
+        if not text:
+            return
+        
+        settings_file = APP_SUPPORT_DIR / "settings.json"
+        settings = {}
+        if settings_file.exists():
+            with open(settings_file, 'r') as f:
+                settings = json.load(f)
+        
+        presets = settings.get('preview_presets', [])
+        if text not in presets:
+            presets.append(text)
+            settings['preview_presets'] = presets
+            with open(settings_file, 'w') as f:
+                json.dump(settings, f, indent=2)
+        
+        self._load_preview_presets()
+        self.status_bar.showMessage(f"Preview preset saved", 2000)
+    
+    def on_compare_fonts(self):
+        """Open comparison dialog for selected fonts."""
+        selected_items = self.fonts_list.selectedItems()
+        if not selected_items:
+            self.status_bar.showMessage("Select fonts to compare", 2000)
+            return
+        
+        # Collect font data from selected items
+        font_data = []
+        for item in selected_items:
+            font_id = item.data(Qt.UserRole)
+            if font_id:  # Skip family headers
+                font_db = self.db.get_font_by_id(font_id)
+                if font_db:
+                    font_data.append(font_db)
+        
+        if len(font_data) < 2:
+            self.status_bar.showMessage("Select at least 2 fonts to compare", 2000)
+            return
+        
+        if len(font_data) > 6:
+            font_data = font_data[:6]
+            self.status_bar.showMessage("Comparing first 6 selected fonts", 2000)
+        
+        self._show_comparison_dialog(font_data)
+    
+    def _show_comparison_dialog(self, font_data):
+        """Show font comparison dialog with horizontal/vertical layout."""
+        from PyQt5.QtGui import QFont, QFontDatabase
+        from PyQt5.QtWidgets import QScrollArea, QGridLayout, QFrame, QSpinBox, QCheckBox
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Font Comparison")
+        dialog.setMinimumWidth(900)
+        dialog.setMinimumHeight(500)
+        
+        layout = QVBoxLayout()
+        
+        # ── Controls bar ────────────────────────────
+        controls_bar = QHBoxLayout()
+        
+        preview_label = QLabel("Preview:")
+        compare_input = QLineEdit()
+        compare_input.setText(self.preview_input.text() if hasattr(self, 'preview_input') else self.get_preview_text())
+        
+        size_label = QLabel("Size:")
+        size_spinner = QSpinBox()
+        size_spinner.setRange(6, 120)
+        size_spinner.setValue(20)
+        size_spinner.setSuffix(" pt")
+        
+        vertical_cb = QCheckBox("Vertical")
+        vertical_cb.setChecked(False)
+        
+        controls_bar.addWidget(preview_label)
+        controls_bar.addWidget(compare_input, 1)
+        controls_bar.addWidget(size_label)
+        controls_bar.addWidget(size_spinner)
+        controls_bar.addWidget(vertical_cb)
+        layout.addLayout(controls_bar)
+        
+        # ── Scroll area ────────────────────────────
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        
+        container = QWidget()
+        container_layout = QVBoxLayout()
+        container_layout.setSpacing(0)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Build font entries (name box + preview for each font)
+        font_entries = []  # list of (name_label, preview_label, font_info)
+        
+        for font in font_data:
+            # ── Narrow font name box ────────────────
+            name_label = QLabel(f"  {font.get('family_name', '')} — {font.get('style_name', '')}  ")
+            name_label.setAlignment(Qt.AlignCenter)
+            name_label.setFrameStyle(QFrame.Box | QFrame.Plain)
+            name_label.setStyleSheet("""
+                QLabel {
+                    background: #00bcd4;
+                    border: 1px solid #0097a7;
+                    border-radius: 3px;
+                    padding: 2px 6px;
+                    font-weight: bold;
+                    font-size: 11px;
+                    color: #ffffff;
+                    max-height: 24px;
+                }
+            """)
+            name_label.setFixedHeight(26)
+            name_label.setMaximumHeight(26)
+            
+            # ── Preview label ───────────────────────
+            preview_label = QLabel(compare_input.text())
+            preview_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+            preview_label.setWordWrap(True)
+            
+            # Apply actual font if cached
+            cached_path = font.get('cached_path', '')
+            applied_family = None
+            applied_style = font.get('style_name', '')
+            if cached_path and os.path.exists(cached_path):
+                font_id_qt = QFontDatabase.addApplicationFont(cached_path)
+                if font_id_qt != -1:
+                    font_families = QFontDatabase.applicationFontFamilies(font_id_qt)
+                    if font_families:
+                        applied_family = font_families[0]
+                        custom_font = QFont(applied_family, size_spinner.value())
+                        if applied_style:
+                            custom_font.setStyleName(applied_style)
+                        preview_label.setFont(custom_font)
+            
+            preview_label.setMinimumWidth(150)
+            font_entries.append({
+                'name': name_label,
+                'preview': preview_label,
+                'family': applied_family,
+                'style': applied_style,
+            })
+        
+        # ── Layout builder ──────────────────────────
+        def build_layout():
+            # Clear existing widgets from container
+            for entry in font_entries:
+                entry['name'].setParent(None)
+                entry['preview'].setParent(None)
+            # Remove any leftover separator frames
+            for child in container.findChildren(QFrame):
+                child.setParent(None)
+            # Clear layout items
+            while container_layout.count():
+                item = container_layout.takeAt(0)
+                if item.layout():
+                    while item.layout().count():
+                        child = item.layout().takeAt(0)
+                        if child.widget():
+                            child.widget().setParent(None)
+                    item.layout().setParent(None)
+                elif item.widget():
+                    item.widget().setParent(None)
+            
+            is_vertical = vertical_cb.isChecked()
+            font_size = size_spinner.value()
+            
+            if is_vertical:
+                # Vertical: each font stacked on top of each other
+                for entry in font_entries:
+                    row_layout = QVBoxLayout()
+                    row_layout.setSpacing(2)
+                    row_layout.setContentsMargins(4, 8, 4, 8)
+                    row_layout.addWidget(entry['name'])
+                    entry['preview'].setAlignment(Qt.AlignLeft | Qt.AlignTop)
+                    row_layout.addWidget(entry['preview'], 1)
+                    
+                    # Separator frame
+                    sep = QFrame()
+                    sep.setFrameShape(QFrame.HLine)
+                    sep.setFrameShadow(QFrame.Sunken)
+                    row_layout.addWidget(sep)
+                    
+                    container_layout.addLayout(row_layout)
+            else:
+                # Horizontal: side by side in a grid
+                grid = QGridLayout()
+                grid.setSpacing(12)
+                for col, entry in enumerate(font_entries):
+                    entry['name'].setAlignment(Qt.AlignCenter)
+                    grid.addWidget(entry['name'], 0, col)
+                    entry['preview'].setAlignment(Qt.AlignCenter)
+                    grid.addWidget(entry['preview'], 1, col)
+                container_layout.addLayout(grid)
+            
+            # Update font sizes
+            for entry in font_entries:
+                if entry['family']:
+                    custom_font = QFont(entry['family'], font_size)
+                    if entry['style']:
+                        custom_font.setStyleName(entry['style'])
+                    entry['preview'].setFont(custom_font)
+        
+        container.setLayout(container_layout)
+        scroll.setWidget(container)
+        layout.addWidget(scroll, 1)
+        
+        # ── Close button ────────────────────────────
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        
+        # ── Live updates ────────────────────────────
+        def update_preview_text(text):
+            for entry in font_entries:
+                entry['preview'].setText(text)
+        
+        def update_font_size(val):
+            for entry in font_entries:
+                if entry['family']:
+                    custom_font = QFont(entry['family'], val)
+                    if entry['style']:
+                        custom_font.setStyleName(entry['style'])
+                    entry['preview'].setFont(custom_font)
+        
+        def toggle_layout():
+            build_layout()
+        
+        compare_input.textChanged.connect(update_preview_text)
+        size_spinner.valueChanged.connect(update_font_size)
+        vertical_cb.stateChanged.connect(toggle_layout)
+        
+        # Initial build
+        build_layout()
+        
+        dialog.setLayout(layout)
+        dialog.exec_()
     
     def on_search(self, text):
         if len(text) == 0:
@@ -1289,25 +2112,37 @@ class MainWindow(QMainWindow):
     def update_fonts_tab_icons(self):
         """Update only the activation icons in Fonts tab without rebuilding."""
         from PyQt5.QtGui import QIcon
-        active_icon_path = Path(__file__).parent / "assets" / "active.svg"
-        inactive_icon_path = Path(__file__).parent / "assets" / "inactive.svg"
-        active_icon = QIcon(str(active_icon_path))
-        inactive_icon = QIcon(str(inactive_icon_path))
+        assets_dir = Path(__file__).parent / "assets"
+        active_icon = QIcon(str(assets_dir / "active.svg"))
+        inactive_icon = QIcon(str(assets_dir / "inactive.svg"))
+        cached_icon = QIcon(str(assets_dir / "cached.svg"))
+        remote_icon = QIcon(str(assets_dir / "remote.svg"))
+        
+        user_fonts_dir = get_fonts_dir()
         
         for i in range(self.fonts_list.count()):
             item = self.fonts_list.item(i)
             font_id = item.data(Qt.UserRole)
             if font_id:  # Only update actual fonts, not family headers
                 is_active = self.font_manager.is_font_active(font_id)
-                item.setIcon(active_icon if is_active else inactive_icon)
+                if is_active:
+                    item.setIcon(active_icon)
+                else:
+                    # Check cached state
+                    state = item.data(Qt.UserRole + 3)
+                    if state == "Cached":
+                        item.setIcon(cached_icon)
+                    else:
+                        item.setIcon(remote_icon)
     
     def update_collection_fonts_icons(self):
         """Update only the activation icons in Collections tab without rebuilding."""
         from PyQt5.QtGui import QIcon
-        active_icon_path = Path(__file__).parent / "assets" / "active.svg"
-        inactive_icon_path = Path(__file__).parent / "assets" / "inactive.svg"
-        active_icon = QIcon(str(active_icon_path))
-        inactive_icon = QIcon(str(inactive_icon_path))
+        assets_dir = Path(__file__).parent / "assets"
+        active_icon = QIcon(str(assets_dir / "active.svg"))
+        inactive_icon = QIcon(str(assets_dir / "inactive.svg"))
+        cached_icon = QIcon(str(assets_dir / "cached.svg"))
+        remote_icon = QIcon(str(assets_dir / "remote.svg"))
         
         for i in range(self.collection_fonts_list.count()):
             item = self.collection_fonts_list.item(i)
@@ -1316,22 +2151,31 @@ class MainWindow(QMainWindow):
                 font_id = item.data(Qt.UserRole)
                 if font_id:
                     is_active = self.font_manager.is_font_active(font_id)
-                    item.setIcon(active_icon if is_active else inactive_icon)
+                    if is_active:
+                        item.setIcon(active_icon)
+                    else:
+                        state = item.data(Qt.UserRole + 3)
+                        item.setIcon(cached_icon if state == "Cached" else remote_icon)
     
     def update_client_fonts_icons(self):
         """Update only the activation icons in Clients tab without rebuilding."""
         from PyQt5.QtGui import QIcon
-        active_icon_path = Path(__file__).parent / "assets" / "active.svg"
-        inactive_icon_path = Path(__file__).parent / "assets" / "inactive.svg"
-        active_icon = QIcon(str(active_icon_path))
-        inactive_icon = QIcon(str(inactive_icon_path))
+        assets_dir = Path(__file__).parent / "assets"
+        active_icon = QIcon(str(assets_dir / "active.svg"))
+        inactive_icon = QIcon(str(assets_dir / "inactive.svg"))
+        cached_icon = QIcon(str(assets_dir / "cached.svg"))
+        remote_icon = QIcon(str(assets_dir / "remote.svg"))
         
         for i in range(self.client_fonts_list.count()):
             item = self.client_fonts_list.item(i)
             font_id = item.data(Qt.UserRole)
             if font_id:  # Only update actual fonts, not family headers
                 is_active = self.font_manager.is_font_active(font_id)
-                item.setIcon(active_icon if is_active else inactive_icon)
+                if is_active:
+                    item.setIcon(active_icon)
+                else:
+                    state = item.data(Qt.UserRole + 3)
+                    item.setIcon(cached_icon if state == "Cached" else remote_icon)
     
     def load_clients(self):
         conn = self.db.get_connection()
@@ -1409,7 +2253,7 @@ class MainWindow(QMainWindow):
                     font_format = 'TrueType' if ext in ['.ttf', '.ttc'] else 'OpenType' if ext == '.otf' else ext
                     
                     # Check if font is activated
-                    user_fonts_dir = Path.home() / "Library" / "Fonts"
+                    user_fonts_dir = get_fonts_dir()
                     filename = font.get('filename_original', '')
                     is_activated = (user_fonts_dir / filename).exists() if filename else False
                     
@@ -1417,14 +2261,25 @@ class MainWindow(QMainWindow):
                     item_text = f"{preview_text}    {style}    {font_format}"
                     font_item = QListWidgetItem(item_text)
                     
-                    # Add status icon
+                    # Add status icon based on state
                     from PyQt5.QtGui import QIcon
-                    icon_path = "assets/active.svg" if is_activated else "assets/inactive.svg"
-                    if os.path.exists(icon_path):
-                        font_item.setIcon(QIcon(icon_path))
+                    assets_dir = Path(__file__).parent / "assets"
+                    if is_activated:
+                        font_item.setIcon(QIcon(str(assets_dir / "active.svg")))
+                        state_tag = "Local"
+                    elif cached_path and os.path.exists(cached_path):
+                        font_item.setIcon(QIcon(str(assets_dir / "cached.svg")))
+                        state_tag = "Cached"
+                    else:
+                        font_item.setIcon(QIcon(str(assets_dir / "remote.svg")))
+                        state_tag = "Remote"
+                    
+                    item_text = f"{preview_text}    {style}    {font_format}    [{state_tag}]"
+                    font_item.setText(item_text)
                     
                     font_item.setData(Qt.UserRole, font['id'])
                     font_item.setData(Qt.UserRole + 1, None)
+                    font_item.setData(Qt.UserRole + 3, state_tag)
                     
                     # Apply font preview if cached
                     if cached_path and os.path.exists(cached_path):
@@ -1901,6 +2756,7 @@ class MainWindow(QMainWindow):
     def sync_metadata(self):
         self.status_bar.showMessage("Syncing metadata...")
         self.sync_button.setEnabled(False)
+        self._set_connection_state("connecting")
         
         self.sync_thread = SyncThread(self.font_manager)
         self.sync_thread.finished.connect(self.on_sync_finished)
@@ -1910,6 +2766,14 @@ class MainWindow(QMainWindow):
     def on_sync_finished(self, result):
         self.load_collections()
         self.load_clients()  # Reload clients list to show new clients
+        self._refresh_collection_filter()  # Update filter combo with new collections
+        
+        # Update connection state and sync time
+        self._set_connection_state("connected")
+        self._last_sync_time = datetime.now()
+        self._save_last_sync_time()
+        self._refresh_sync_time()
+        self._refresh_cache_count()
         
         # Auto-download fonts in background if there are new ones
         if result['fonts'] > 0:
@@ -1920,8 +2784,80 @@ class MainWindow(QMainWindow):
             self.sync_button.setEnabled(True)
     
     def on_sync_error(self, error):
-        self.status_bar.showMessage(f"Sync failed: {error}", 5000)
+        self.status_bar.showMessage(f"Sync failed: {error} — working offline", 5000)
         self.sync_button.setEnabled(True)
+        self._set_connection_state("disconnected")
+        # Still load fonts from local DB so UI isn't empty
+        self.load_all_fonts()
+        self.load_recent()
+    
+    def _set_connection_state(self, state):
+        """Update the connection indicator in the status bar."""
+        if state == "connected":
+            self.connection_label.setText("● Connected")
+            self.connection_label.setStyleSheet("color: #22c55e; font-weight: bold; padding: 0 8px;")
+        elif state == "connecting":
+            self.connection_label.setText("● Connecting...")
+            self.connection_label.setStyleSheet("color: #f97316; font-weight: bold; padding: 0 8px;")
+        else:  # disconnected
+            self.connection_label.setText("● Disconnected")
+            self.connection_label.setStyleSheet("color: #ef4444; font-weight: bold; padding: 0 8px;")
+    
+    def _refresh_sync_time(self):
+        """Update the 'last sync' label with relative time."""
+        if self._last_sync_time:
+            delta = datetime.now() - self._last_sync_time
+            seconds = int(delta.total_seconds())
+            if seconds < 60:
+                text = "Last sync: just now"
+            elif seconds < 3600:
+                text = f"Last sync: {seconds // 60} mins ago"
+            elif seconds < 86400:
+                text = f"Last sync: {seconds // 3600} hours ago"
+            else:
+                text = f"Last sync: {seconds // 86400} days ago"
+            self.last_sync_label.setText(text)
+        else:
+            self.last_sync_label.setText("Last sync: never")
+    
+    def _refresh_cache_count(self):
+        """Update the cache count label."""
+        try:
+            conn = self.db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM fonts WHERE cached = 1 OR (cached_path IS NOT NULL AND cached_path != '')")
+            count = cursor.fetchone()[0]
+            conn.close()
+            self.cache_count_label.setText(f"{count} fonts cached")
+        except Exception:
+            self.cache_count_label.setText("? fonts cached")
+    
+    def _load_last_sync_time(self):
+        """Load last sync time from settings."""
+        settings_file = APP_SUPPORT_DIR / "settings.json"
+        if settings_file.exists():
+            with open(settings_file, 'r') as f:
+                settings = json.load(f)
+                ts = settings.get('last_sync_time')
+                if ts:
+                    self._last_sync_time = datetime.fromisoformat(ts)
+                    self._refresh_sync_time()
+        
+        # Also refresh cache count on startup
+        self._refresh_cache_count()
+    
+    def _save_last_sync_time(self):
+        """Save last sync time to settings."""
+        settings_file = APP_SUPPORT_DIR / "settings.json"
+        settings = {}
+        if settings_file.exists():
+            with open(settings_file, 'r') as f:
+                settings = json.load(f)
+        settings['last_sync_time'] = self._last_sync_time.isoformat() if self._last_sync_time else None
+        # Also save last known good URL
+        settings['last_known_good_url'] = self.api.server_url if hasattr(self, 'api') else ''
+        with open(settings_file, 'w') as f:
+            json.dump(settings, f, indent=2)
     
     def download_all_fonts(self):
         self.download_thread = DownloadThread(self.font_manager)
@@ -2116,6 +3052,7 @@ class MainWindow(QMainWindow):
                 # Apply settings
                 self.apply_settings()
                 self.load_all_fonts()
+                self._load_system_fonts()  # Refresh system fonts (collapse setting may have changed)
                 
                 # Reload currently selected client if on Clients tab
                 current_client = self.clients_list.currentItem()

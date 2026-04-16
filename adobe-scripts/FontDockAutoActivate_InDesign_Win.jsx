@@ -27,7 +27,21 @@ function writeLog(msg) {
 // Request directory - FontDock client watches this folder
 // Windows: %LOCALAPPDATA%\FontDock\requests
 // ============================================================
-var REQUEST_DIR = Folder.myAppData.parent + "/Local/FontDock/requests";
+var REQUEST_DIR = "";
+try {
+    // Folder.myAppData = Roaming AppData; go up to AppData, then into Local
+    var appDataDir = Folder.myAppData.parent;
+    if (appDataDir !== null && appDataDir !== undefined) {
+        REQUEST_DIR = appDataDir.fsName + "/Local/FontDock/requests";
+    } else {
+        // Fallback: construct path manually from user profile
+        var userProfile = Folder.myDocuments.parent.fsName;
+        REQUEST_DIR = userProfile + "/AppData/Local/FontDock/requests";
+    }
+} catch(e) {
+    // Last resort fallback
+    REQUEST_DIR = "C:/Users/" + $.getenv("USERNAME") + "/AppData/Local/FontDock/requests";
+}
 
 // Helper function to check if array contains item (ExtendScript doesn't have indexOf)
 function arrayContains(arr, item) {
@@ -62,14 +76,27 @@ function installEventListener() {
     }
 }
 
-function checkAndActivateFonts() {
+function checkAndActivateFonts(event) {
     try {
-        // Check if a document is open
-        if (app.documents.length === 0) {
-            return;
-        }
+        var doc = null;
         
-        var doc = app.activeDocument;
+        // If called from an event, use event.target as the document
+        // afterOpen fires before the doc appears in app.documents,
+        // so app.activeDocument throws "No documents are open"
+        if (event !== undefined && event !== null && event.target !== undefined) {
+            // afterOpen also fires for libraries, books, etc. - skip those
+            if (!(event.target instanceof Document)) {
+                writeLog("checkAndActivateFonts: skipping non-document open event");
+                return;
+            }
+            doc = event.target;
+        } else {
+            // Called manually (e.g. from installEventListener) - use activeDocument
+            if (app.documents.length === 0) {
+                return;
+            }
+            doc = app.activeDocument;
+        }
         
         // Get document info
         var docName = doc.name;
@@ -86,17 +113,24 @@ function checkAndActivateFonts() {
         var missingFonts = [];
         
         var fonts = doc.fonts;
+        writeLog("checkAndActivateFonts: document has " + fonts.length + " total fonts");
         
         for (var i = 0; i < fonts.length; i++) {
             var font = fonts[i];
+            var fontFamily = font.fontFamily;
+            var fontStyle = font.fontStyleName;
+            var statusStr = "";
+            // Log all font statuses for debugging
+            if (font.status === FontStatus.INSTALLED) statusStr = "INSTALLED";
+            else if (font.status === FontStatus.NOT_AVAILABLE) statusStr = "NOT_AVAILABLE";
+            else if (font.status === FontStatus.SUBSTITUTED) statusStr = "SUBSTITUTED";
+            else if (font.status === FontStatus.FAUX) statusStr = "FAUX";
+            else statusStr = "UNKNOWN(" + font.status + ")";
+            writeLog("  font[" + i + "]: " + fontFamily + " / " + fontStyle + " -> " + statusStr);
             
             // Check if font is missing (SUBSTITUTED status means font is missing)
             if (font.status === FontStatus.NOT_AVAILABLE || 
                 font.status === FontStatus.SUBSTITUTED) {
-                
-                // Get family and style separately for exact matching
-                var fontFamily = font.fontFamily;
-                var fontStyle = font.fontStyleName;
                 
                 // Create font object with family and style
                 var fontObj = {
@@ -201,6 +235,16 @@ JSON.stringify = function(obj) {
 // ============================================================
 // Script loaded - install event listener
 // ============================================================
-writeLog("=== FontDock InDesign Auto-Activate script loaded (Windows) ===");
-installEventListener();
-writeLog("=== Script initialization complete ===");
+try {
+    writeLog("=== FontDock InDesign Auto-Activate script loaded (Windows) ===");
+    installEventListener();
+    writeLog("=== Script initialization complete ===");
+} catch (e) {
+    // Last-resort error reporting - write to desktop even if writeLog failed
+    try {
+        var f = new File(Folder.desktop + "/fontdock_id_error.txt");
+        f.open("w");
+        f.write("FontDock InDesign script FATAL ERROR: " + e.message + " (line " + e.line + ")");
+        f.close();
+    } catch(e2) {}
+}

@@ -20,8 +20,20 @@ elif sys.platform == 'win32':
     )
 
 APP_NAME = "FontDock"
-SERVER_URL = "http://localhost:9998"
 LOCAL_API_PORT = 8765
+
+# Read server URL from settings.json if available, otherwise use default
+_SETTINGS_FILE = get_app_support_dir() / "settings.json"
+if _SETTINGS_FILE.exists():
+    try:
+        import json as _json
+        with open(_SETTINGS_FILE, 'r') as _f:
+            _settings = _json.load(_f)
+        SERVER_URL = _settings.get('server_url', 'http://localhost:9998')
+    except Exception:
+        SERVER_URL = 'http://localhost:9998'
+else:
+    SERVER_URL = 'http://localhost:9998'
 
 APP_SUPPORT_DIR = get_app_support_dir()
 CACHE_DIR = get_cache_dir()

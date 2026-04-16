@@ -95,7 +95,7 @@ This keeps the project realistic, testable, and useful at every stage.
 
 ## Status
 
-**Version 1.0.0** - Fully functional MVP complete!
+**Version 1.1.0** - Fully functional MVP with trust signals and offline mode!
 
 ### ✅ Completed Features
 
@@ -104,12 +104,12 @@ This keeps the project realistic, testable, and useful at every stage.
 - ✅ Font upload, metadata extraction, and storage
 - ✅ Web admin portal with font preview
 - ✅ Client and collection management
-- ✅ macOS client with PyQt5 GUI
-- ✅ Font activation/deactivation (direct file copy)
+- ✅ Cross-platform client (macOS + Windows) with PyQt5 GUI
+- ✅ Font activation/deactivation (direct file copy + Windows registry)
 - ✅ Local font caching and sync
 - ✅ InDesign auto-activation (startup script + `afterOpen` event)
-- ✅ Illustrator auto-activation (AppleScript watcher + file parsing)
-- ✅ Photoshop auto-activation (AppleScript font scanning)
+- ✅ Illustrator auto-activation (AppleScript/COM watcher + file parsing)
+- ✅ Photoshop auto-activation (AppleScript/COM font scanning)
 - ✅ Version-independent Adobe app detection
 - ✅ Family grouping with collapsible UI
 - ✅ Dark mode support
@@ -117,6 +117,18 @@ This keeps the project realistic, testable, and useful at every stage.
 - ✅ Status indicators (active/inactive fonts)
 - ✅ Duplicate detection (PostScript name + file hash)
 - ✅ Many-to-many client-font relationships
+
+### 🆕 v1.1 Features — Trust Signals & Offline Mode
+
+- ✅ **System Status Panel** — Persistent status bar showing connection state (● Connected/Connecting/Disconnected), last sync time (relative), and cached font count
+- ✅ **Offline Mode** — Client works without server connection; loads fonts from local DB, activates cached fonts, shows clear "working offline" messaging
+- ✅ **Settings Dialog Restructure** — Grouped sections (Server/Sync/Appearance), separate address + port fields, inline test result, last known good URL
+- ✅ **Enhanced Test Connection** — Multi-step check (health endpoint + font count), inline color-coded feedback (no more blocking dialogs)
+- ✅ **Connection State Persistence** — Last sync time and last known good URL saved to settings, restored on startup
+- ✅ **System Fonts Tab** — Browse all system-installed fonts alongside FontDock fonts, with search, family grouping, and collapse-by-default support
+- ✅ **Font Comparison Dialog** — Side-by-side or vertical comparison, adjustable point size (6–120pt), live preview text, cyan-themed font name badges
+- ✅ **Filter Fixes** — "Activated Only" and "Recently Used" filters now work correctly with collapsed families; collection filter combo refreshes after sync
+- ✅ **Cache Count Fix** — Fixed `INSERT OR REPLACE` wiping cached state on sync; cache count now persists correctly across syncs
 
 ### 🚀 Quick Start
 

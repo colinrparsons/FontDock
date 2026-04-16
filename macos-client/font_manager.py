@@ -2,6 +2,7 @@ import os
 import sys
 import subprocess
 import logging
+import requests
 from pathlib import Path
 from config import CACHE_DIR
 from api_client import FontDockAPI
@@ -29,14 +30,47 @@ class FontManager:
             logger.debug(f"Font {font_id} already cached at {font.get('cached_path')}")
             return font['cached_path']
         
-        logger.info(f"Downloading font {font_id}: {font.get('filename_original')}")
-        content = self.api.download_font(font_id)
-        
         filename = font.get('filename_original') or f"font_{font_id}{font.get('extension', '.ttf')}"
         cache_path = CACHE_DIR / filename
         
-        with open(cache_path, 'wb') as f:
-            f.write(content)
+        # If cache file exists but DB doesn't know about it, use it
+        if cache_path.exists():
+            try:
+                # Verify file is readable
+                with open(cache_path, 'rb') as f:
+                    f.read(1)
+                self.db.mark_font_cached(font_id, str(cache_path))
+                logger.info(f"Font {font_id} using existing cache file {cache_path}")
+                return str(cache_path)
+            except PermissionError:
+                logger.warning(f"Cache file {cache_path} exists but locked, will re-download")
+        
+        logger.info(f"Downloading font {font_id}: {font.get('filename_original')}")
+        try:
+            content = self.api.download_font(font_id)
+        except requests.exceptions.ConnectionError:
+            raise RuntimeError(f"Cannot download font — server unreachable. Font '{filename}' is not cached locally.")
+        except requests.exceptions.Timeout:
+            raise RuntimeError(f"Cannot download font — server timed out. Font '{filename}' is not cached locally.")
+        except Exception as e:
+            raise RuntimeError(f"Cannot download font '{filename}': {e}")
+        
+        try:
+            with open(cache_path, 'wb') as f:
+                f.write(content)
+        except PermissionError:
+            # File is locked - try writing to a temp name and rename
+            import tempfile
+            tmp_path = CACHE_DIR / f"{filename}.tmp"
+            with open(tmp_path, 'wb') as f:
+                f.write(content)
+            # Try to replace (may still fail if locked)
+            try:
+                os.replace(tmp_path, cache_path)
+            except PermissionError:
+                # Use the tmp file as the cache path instead
+                cache_path = tmp_path
+                logger.warning(f"Font {font_id} cached to alternate path {cache_path}")
         
         self.db.mark_font_cached(font_id, str(cache_path))
         logger.info(f"Font {font_id} cached to {cache_path}")
@@ -113,9 +147,17 @@ class FontManager:
             filename = font.get('filename_original') or os.path.basename(font_path)
             dest_path = user_fonts_dir / filename
             
-            # Copy the font file
-            shutil.copy2(font_path, dest_path)
-            logger.info(f"Font {font_id} copied to {dest_path}")
+            # Copy the font file (skip if already exists and readable)
+            if dest_path.exists():
+                try:
+                    with open(dest_path, 'rb') as f:
+                        f.read(1)
+                    logger.info(f"Font {font_id} already at {dest_path}, skipping copy")
+                except PermissionError:
+                    logger.warning(f"Font {font_id} at {dest_path} exists but locked, skipping")
+            else:
+                shutil.copy2(font_path, dest_path)
+                logger.info(f"Font {font_id} copied to {dest_path}")
             
             # On Windows, also register in registry for proper font discovery
             if sys.platform == 'win32':
