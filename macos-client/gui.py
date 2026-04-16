@@ -14,6 +14,11 @@ from font_manager import FontManager
 from config import APP_SUPPORT_DIR
 from http_server import FontDockHTTPServer
 
+if sys.platform == 'darwin':
+    from fontdock_platform.macos import get_fonts_dir
+elif sys.platform == 'win32':
+    from fontdock_platform.windows import get_fonts_dir
+
 
 class SyncThread(QThread):
     finished = pyqtSignal(dict)
@@ -970,8 +975,8 @@ class MainWindow(QMainWindow):
                 style = font['style_name'] or 'Regular'
                 font_format = 'TrueType' if font['extension'] in ['.ttf', '.ttc'] else 'OpenType' if font['extension'] == '.otf' else font['extension']
                 
-                # Check if font is activated (exists in ~/Library/Fonts/)
-                user_fonts_dir = Path.home() / "Library" / "Fonts"
+                # Check if font is activated (exists in user fonts directory)
+                user_fonts_dir = get_fonts_dir()
                 is_activated = (user_fonts_dir / font['filename']).exists()
                 
                 # Create preview text in actual font with consistent indentation

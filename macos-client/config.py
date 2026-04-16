@@ -1,15 +1,32 @@
 import os
 import logging
-from pathlib import Path
+import sys
+
+# Import our local platform package (not Python's built-in platform module)
+# sys.path[0] is the script directory, ensuring our platform/ is found first
+if sys.platform == 'darwin':
+    from fontdock_platform.macos import (
+        get_app_support_dir,
+        get_cache_dir,
+        get_db_path,
+        get_log_path,
+    )
+elif sys.platform == 'win32':
+    from fontdock_platform.windows import (
+        get_app_support_dir,
+        get_cache_dir,
+        get_db_path,
+        get_log_path,
+    )
 
 APP_NAME = "FontDock"
 SERVER_URL = "http://localhost:9998"
 LOCAL_API_PORT = 8765
 
-APP_SUPPORT_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
-CACHE_DIR = APP_SUPPORT_DIR / "cache" / "fonts"
-DB_PATH = APP_SUPPORT_DIR / "fontdock.db"
-LOG_PATH = APP_SUPPORT_DIR / "fontdock.log"
+APP_SUPPORT_DIR = get_app_support_dir()
+CACHE_DIR = get_cache_dir()
+DB_PATH = get_db_path()
+LOG_PATH = get_log_path()
 
 KEYRING_SERVICE = "FontDock"
 KEYRING_USERNAME = "auth_token"

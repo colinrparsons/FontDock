@@ -1,11 +1,31 @@
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
+import sys
 import threading
 import re
 import os
 import subprocess
 from config import LOCAL_API_PORT
 from font_manager import FontManager
+
+if sys.platform == 'darwin':
+    from fontdock_platform.macos import (
+        is_app_running as _is_app_running_mac,
+        get_open_documents as _get_open_documents_mac,
+        get_photoshop_font_names as _get_ps_fonts_mac,
+        detect_installed_apps as _detect_apps_mac,
+        extract_fonts_from_file as _extract_fonts_mac,
+        get_request_dir as _get_request_dir_mac,
+    )
+elif sys.platform == 'win32':
+    from fontdock_platform.windows import (
+        is_app_running as _is_app_running_win,
+        get_open_documents as _get_open_documents_win,
+        get_photoshop_font_names as _get_ps_fonts_win,
+        detect_installed_apps as _detect_apps_win,
+        extract_fonts_from_file as _extract_fonts_win,
+        get_request_dir as _get_request_dir_win,
+    )
 
 
 class AdobeBridgeHandler(BaseHTTPRequestHandler):
@@ -225,85 +245,25 @@ class AdobeBridgeHandler(BaseHTTPRequestHandler):
     
     @staticmethod
     def extract_fonts_from_file(file_path):
-        """Extract font PostScript names from Adobe document files by parsing the file content.
-        .ai files are PDF-based and contain font entries in both XML metadata and PDF structures.
-        .indd/.indt files contain XMP metadata with stFnt:fontName entries.
-        .psd files contain font resource blocks.
-        """
-        font_names = set()
-        ext = os.path.splitext(file_path)[1].lower()
-        
-        try:
-            if ext in ('.ai', '.indd', '.indt'):
-                # .ai and .indd files both contain XMP XML metadata with font info
-                result = subprocess.run(
-                    ['strings', file_path],
-                    capture_output=True, text=True, timeout=10
-                )
-                content = result.stdout
-                
-                # Pattern 1: stFnt:fontName="PostScriptName" (XMP XML metadata)
-                for match in re.finditer(r'stFnt:fontName="([^"]+)"', content):
-                    font_names.add(match.group(1))
-                
-                # Also match <stFnt:fontName>PostScriptName</stFnt:fontName> (InDesign format)
-                for match in re.finditer(r'<stFnt:fontName>([^<]+)</stFnt:fontName>', content):
-                    font_names.add(match.group(1))
-                
-                # Pattern 2: /BaseFont/XXXXXX+PostScriptName or /BaseFont/PostScriptName
-                # The XXXXXX+ prefix is a font subset indicator - strip it (PDF-based .ai only)
-                for match in re.finditer(r'/BaseFont/([A-Z]{6}\+)?([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)', content):
-                    name = match.group(2)
-                    if name not in ('Symbol', 'ZapfDingbats', 'Identity-H'):
-                        font_names.add(name)
-                
-                # Pattern 3: /FontName/XXXXXX+PostScriptName (font descriptors)
-                for match in re.finditer(r'/FontName/([A-Z]{6}\+)?([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)', content):
-                    name = match.group(2)
-                    if name not in ('Symbol', 'ZapfDingbats', 'Identity-H'):
-                        font_names.add(name)
-            
-            elif ext in ('.psd', '.psb'):
-                # PSD/PSB files store font info in binary resource blocks
-                # Try both ASCII and UTF-16 strings
-                for encoding_args in [[], ['-e', 'l']]:
-                    result = subprocess.run(
-                        ['strings'] + encoding_args + [file_path],
-                        capture_output=True, text=True, timeout=10
-                    )
-                    content = result.stdout
-                    
-                    # Look for font family names in PSD font resource blocks
-                    for line in content.split('\n'):
-                        line = line.strip()
-                        if line and len(line) > 2 and re.match(r'^[A-Z][a-z]', line):
-                            if any(w in line.lower() for w in ['bold', 'italic', 'light', 'medium',
-                                                                 'condensed', 'roman', 'regular',
-                                                                 'black', 'heavy', 'thin', 'ultra']):
-                                font_names.add(line)
-            
-            else:
-                return []
-        
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).error(f"Error extracting fonts from {file_path}: {e}")
-            return []
-        
-        # Filter out common system/default fonts that don't need activation
-        skip_fonts = {'ArialMT', 'TimesNewRomanPSMT', 'CourierNewPSMT',
-                      'Arial-BoldMT', 'Arial-ItalicMT', 'Helvetica',
-                      'Helvetica-Bold', 'Courier', 'Times-Roman',
-                      'Symbol', 'ZapfDingbats'}
-        
-        return sorted(font_names - skip_fonts)
+        """Extract font PostScript names from Adobe document files.
+        Delegates to platform-specific implementation."""
+        if sys.platform == 'darwin':
+            return _extract_fonts_mac(file_path)
+        elif sys.platform == 'win32':
+            return _extract_fonts_win(file_path)
+        return []
 
 
 class RequestFileWatcher:
     """Watches for request files from Adobe scripts (Illustrator/Photoshop)
     that can't make HTTP requests and instead write .json files to disk."""
     
-    REQUEST_DIR = os.path.expanduser("~/Library/Application Support/FontDock/requests")
+    if sys.platform == 'darwin':
+        REQUEST_DIR = _get_request_dir_mac()
+    elif sys.platform == 'win32':
+        REQUEST_DIR = _get_request_dir_win()
+    else:
+        REQUEST_DIR = os.path.expanduser("~/FontDock/requests")
     POLL_INTERVAL = 2  # seconds
     
     def __init__(self, font_manager: FontManager):
@@ -419,37 +379,13 @@ class RequestFileWatcher:
 
 class AdobeAppWatcher:
     """Watches Adobe Illustrator and Photoshop for newly opened documents
-    and auto-activates their fonts. Uses AppleScript to query open docs
-    since Illustrator 2026 has no ExtendScript event system.
+    and auto-activates their fonts.
     
+    On macOS: Uses AppleScript to query open docs.
+    On Windows: Uses PowerShell/COM automation.
     Auto-detects installed Adobe app versions - no hardcoded version numbers."""
     
     POLL_INTERVAL = 5  # seconds between checks
-    
-    # App discovery config - no version numbers hardcoded
-    APP_CONFIG = {
-        'illustrator': {
-            'app_folder_pattern': 'Adobe Illustrator*',
-            'app_bundle_pattern': 'Adobe Illustrator*.app',
-            'process_pattern': 'Adobe Illustrator',
-            'extensions': ['.ai'],
-            'doc_path_property': 'file path',  # AppleScript property for doc path
-        },
-        'indesign': {
-            'app_folder_pattern': 'Adobe InDesign*',
-            'app_bundle_pattern': 'Adobe InDesign*.app',
-            'process_pattern': 'Adobe InDesign',
-            'extensions': ['.indd', '.indt'],
-            'doc_path_property': 'full name',  # InDesign uses 'full name' not 'file path'
-        },
-        'photoshop': {
-            'app_folder_pattern': 'Adobe Photoshop*',
-            'app_bundle_pattern': 'Adobe Photoshop*.app',
-            'process_pattern': 'Adobe Photoshop',
-            'extensions': ['.psd', '.psb'],
-            'doc_path_property': 'file path',  # Photoshop uses 'file path'
-        },
-    }
     
     def __init__(self, font_manager: FontManager):
         self.font_manager = font_manager
@@ -460,66 +396,14 @@ class AdobeAppWatcher:
         self._detect_installed_apps()
     
     def _detect_installed_apps(self):
-        """Auto-detect installed Adobe apps and their AppleScript names.
-        Scans /Applications for Adobe Illustrator/Photoshop installations."""
-        import glob
+        """Auto-detect installed Adobe apps using platform-specific detection."""
         import logging
         logger = logging.getLogger(__name__)
         
-        for app_name, config in self.APP_CONFIG.items():
-            # Find the latest installed version
-            app_folders = sorted(
-                glob.glob(f'/Applications/{config["app_folder_pattern"]}'),
-                reverse=True  # newest version first
-            )
-            
-            if not app_folders:
-                logger.info(f"App watcher: {app_name} not found in /Applications")
-                continue
-            
-            # Use the latest version found
-            latest_folder = app_folders[0]
-            
-            # Find the .app bundle inside
-            app_bundles = sorted(
-                glob.glob(f'{latest_folder}/{config["app_bundle_pattern"]}'),
-                reverse=True
-            )
-            
-            if not app_bundles:
-                logger.info(f"App watcher: no .app bundle found in {latest_folder}")
-                continue
-            
-            # Extract the AppleScript name from the app's Info.plist
-            # This is the actual display/process name, which may include a version
-            # e.g., Illustrator = "Adobe Illustrator", Photoshop = "Adobe Photoshop 2026"
-            display_name = None
-            try:
-                info_plist = f'{app_bundles[0]}/Contents/Info.plist'
-                if os.path.exists(info_plist):
-                    result = subprocess.run(
-                        ['defaults', 'read', info_plist, 'CFBundleDisplayName'],
-                        capture_output=True, text=True, timeout=5
-                    )
-                    if result.returncode == 0:
-                        display_name = result.stdout.strip()
-            except:
-                pass
-            
-            if not display_name:
-                # Fallback: strip .app from bundle filename
-                bundle_name = os.path.basename(app_bundles[0])
-                display_name = bundle_name.replace('.app', '')
-            
-            self._detected_apps[app_name] = {
-                'applescript_name': display_name,
-                'process_pattern': config['process_pattern'],
-                'extensions': config['extensions'],
-                'doc_path_property': config['doc_path_property'],
-                'bundle_path': app_bundles[0],
-            }
-            
-            logger.info(f"App watcher: detected {app_name} -> {display_name} at {app_bundles[0]}")
+        if sys.platform == 'darwin':
+            self._detected_apps = _detect_apps_mac()
+        elif sys.platform == 'win32':
+            self._detected_apps = _detect_apps_win()
         
         if self._detected_apps:
             detected_names = [v['applescript_name'] for v in self._detected_apps.values()]
@@ -589,82 +473,23 @@ class AdobeAppWatcher:
             threading.Event().wait(self.POLL_INTERVAL)
     
     def _is_app_running(self, applescript_name):
-        """Check if an Adobe app is running using System Events.
-        Uses AppleScript System Events which does NOT launch apps,
-        unlike 'tell application "X"' which does."""
-        try:
-            script = f'tell application "System Events" to (name of processes) contains "{applescript_name}"'
-            result = subprocess.run(
-                ['osascript', '-e', script],
-                capture_output=True, text=True, timeout=5
-            )
-            return result.returncode == 0 and 'true' in result.stdout.lower()
-        except:
-            return False
+        """Check if an Adobe app is running. Platform-specific implementation."""
+        if sys.platform == 'darwin':
+            return _is_app_running_mac(applescript_name)
+        elif sys.platform == 'win32':
+            return _is_app_running_win(applescript_name)
+        return False
     
     def _get_open_documents(self, app_name, app_info):
-        """Query Adobe app for open document paths via AppleScript.
-        Uses System Events to verify the app is running before targeting it,
-        preventing accidental app launches."""
-        try:
-            as_name = app_info['applescript_name']
-            doc_prop = app_info['doc_path_property']
-            # Use System Events to check running first, then target the app
-            # This prevents 'tell application "X"' from launching the app
-            script = f'''
-tell application "System Events"
-    set isRunning to (name of processes) contains "{as_name}"
-end tell
-if isRunning then
-    tell application "{as_name}"
-        set docPaths to {{}}
-        repeat with d in documents
-            try
-                set end of docPaths to ({doc_prop} of d) as text
-            end try
-        end repeat
-        return docPaths
-    end tell
-else
-    return {{}}
-end if'''
-            
-            result = subprocess.run(
-                ['osascript', '-e', script],
-                capture_output=True, text=True, timeout=10
+        """Query Adobe app for open document paths. Platform-specific implementation."""
+        if sys.platform == 'darwin':
+            return _get_open_documents_mac(
+                app_info['applescript_name'],
+                app_info['doc_path_property']
             )
-            
-            if result.returncode != 0:
-                return None
-            
-            output = result.stdout.strip()
-            if not output:
-                return []
-            
-            # Parse output - contains "file Macintosh HD:Users:..." entries
-            # Also may contain stderr warnings on separate lines
-            clean_paths = []
-            for line in output.split('\n'):
-                line = line.strip()
-                # Look for Mac-style paths from file path output
-                if 'Macintosh HD' in line:
-                    # Extract the path part after "file "
-                    idx = line.find('Macintosh HD')
-                    mac_path = line[idx:]
-                    # Convert Mac path to POSIX: Macintosh HD:Users:... -> /Users/...
-                    posix = mac_path.replace('Macintosh HD:', '/', 1).replace(':', '/')
-                    if os.path.exists(posix):
-                        clean_paths.append(posix)
-                elif line.startswith('/'):
-                    if os.path.exists(line):
-                        clean_paths.append(line)
-            
-            return clean_paths
-        
-        except subprocess.TimeoutExpired:
-            return None
-        except Exception:
-            return None
+        elif sys.platform == 'win32':
+            return _get_open_documents_win(app_name)
+        return None
     
     def _process_document(self, file_path, app_name):
         """Extract fonts from a document and activate them.
@@ -708,57 +533,12 @@ end if'''
             logger.error(f"  Error processing document {file_path}: {e}")
     
     def _get_photoshop_font_names(self, as_name):
-        """Get font PostScript names from open Photoshop documents via AppleScript.
-        Scans top-level text layers for their font property."""
-        try:
-            # Use document index instead of 'repeat with doc in documents'
-            # which causes Internal Error 9999 in Photoshop AppleScript
-            script = f'''
-tell application "System Events"
-    set isRunning to (name of processes) contains "{as_name}"
-end tell
-if isRunning then
-    tell application "{as_name}"
-        set fontNames to {{}}
-        set docCount to count of documents
-        repeat with d from 1 to docCount
-            set layerCount to count of layers of document d
-            repeat with i from 1 to layerCount
-                try
-                    set layerKind to kind of layer i of document d
-                    if layerKind is text layer then
-                        set fn to font of text object of layer i of document d as text
-                        if fontNames does not contain fn then
-                            set end of fontNames to fn
-                        end if
-                    end if
-                end try
-            end repeat
-        end repeat
-        return fontNames
-    end tell
-else
-    return {{}}
-end if'''
-            
-            result = subprocess.run(
-                ['osascript', '-e', script],
-                capture_output=True, text=True, timeout=15
-            )
-            
-            if result.returncode != 0:
-                return []
-            
-            output = result.stdout.strip()
-            if not output or output == '':
-                return []
-            
-            # Parse comma-separated font names from AppleScript output
-            font_names = [f.strip() for f in output.split(',') if f.strip()]
-            return font_names
-        
-        except Exception:
-            return []
+        """Get font PostScript names from open Photoshop documents. Platform-specific."""
+        if sys.platform == 'darwin':
+            return _get_ps_fonts_mac(as_name)
+        elif sys.platform == 'win32':
+            return _get_ps_fonts_win(as_name)
+        return []
     
     def _activate_fonts_from_file(self, file_path):
         """Extract fonts from a file on disk and activate them"""

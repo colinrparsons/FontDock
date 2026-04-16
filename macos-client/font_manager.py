@@ -1,10 +1,16 @@
 import os
+import sys
 import subprocess
 import logging
 from pathlib import Path
 from config import CACHE_DIR
 from api_client import FontDockAPI
 from database import LocalDatabase
+
+if sys.platform == 'darwin':
+    from fontdock_platform.macos import get_fonts_dir
+elif sys.platform == 'win32':
+    from fontdock_platform.windows import get_fonts_dir, _register_font, _unregister_font
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +88,7 @@ class FontManager:
         if not font:
             return False
         
-        user_fonts_dir = Path.home() / "Library" / "Fonts"
+        user_fonts_dir = get_fonts_dir()
         filename = font.get('filename_original')
         if not filename:
             return False
@@ -93,7 +99,7 @@ class FontManager:
         return exists
     
     def activate_font(self, font_id):
-        """Activate font by copying to ~/Library/Fonts/."""
+        """Activate font by copying to user fonts directory."""
         import shutil
         
         font_path = self.download_font(font_id)
@@ -101,7 +107,7 @@ class FontManager:
         
         try:
             # Copy font to user's Fonts directory
-            user_fonts_dir = Path.home() / "Library" / "Fonts"
+            user_fonts_dir = get_fonts_dir()
             user_fonts_dir.mkdir(parents=True, exist_ok=True)
             
             filename = font.get('filename_original') or os.path.basename(font_path)
@@ -110,6 +116,10 @@ class FontManager:
             # Copy the font file
             shutil.copy2(font_path, dest_path)
             logger.info(f"Font {font_id} copied to {dest_path}")
+            
+            # On Windows, also register in registry for proper font discovery
+            if sys.platform == 'win32':
+                _register_font(filename, str(dest_path))
             
             # Record activation
             self.db.record_activation(font_id)
@@ -127,14 +137,14 @@ class FontManager:
             raise RuntimeError(f"Font activation failed: {str(e)}")
     
     def deactivate_font(self, font_id):
-        """Deactivate font by removing from ~/Library/Fonts/."""
+        """Deactivate font by removing from user fonts directory."""
         font = self.db.get_font_by_id(font_id)
         if not font:
             raise ValueError(f"Font {font_id} not found")
         
         try:
             # Remove font from user's Fonts directory
-            user_fonts_dir = Path.home() / "Library" / "Fonts"
+            user_fonts_dir = get_fonts_dir()
             filename = font.get('filename_original')
             if not filename:
                 raise ValueError(f"Cannot deactivate font {font_id}: no filename found")
@@ -146,8 +156,12 @@ class FontManager:
                 logger.info(f"Font {font_id} removed from {font_path}")
                 message = f'Font deactivated: {filename}'
             else:
-                logger.info(f"Font {font_id} already inactive (not in ~/Library/Fonts)")
+                logger.info(f"Font {font_id} already inactive")
                 message = f'Font already inactive: {filename}'
+            
+            # On Windows, also unregister from registry
+            if sys.platform == 'win32':
+                _unregister_font(filename)
             
             return {
                 'success': True,
