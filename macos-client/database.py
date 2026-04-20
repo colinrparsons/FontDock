@@ -138,6 +138,9 @@ class LocalDatabase:
         conn = self.get_connection()
         cursor = conn.cursor()
         
+        # Get list of collection IDs from server
+        server_collection_ids = [c.get('id') for c in collections if isinstance(c, dict) and c.get('id')]
+        
         for collection in collections:
             if isinstance(collection, dict):
                 cursor.execute("""
@@ -154,6 +157,22 @@ class LocalDatabase:
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.warning(f"Skipping non-dict collection: {collection}")
+        
+        # Delete collections that no longer exist on server
+        if server_collection_ids:
+            placeholders = ','.join('?' * len(server_collection_ids))
+            cursor.execute(f"""
+                DELETE FROM collections 
+                WHERE id NOT IN ({placeholders})
+            """, server_collection_ids)
+            # Also delete orphaned collection_fonts entries
+            cursor.execute(f"""
+                DELETE FROM collection_fonts 
+                WHERE collection_id NOT IN ({placeholders})
+            """, server_collection_ids)
+        else:
+            cursor.execute("DELETE FROM collections")
+            cursor.execute("DELETE FROM collection_fonts")
         
         conn.commit()
         conn.close()
@@ -177,6 +196,9 @@ class LocalDatabase:
         conn = self.get_connection()
         cursor = conn.cursor()
         
+        # Get list of client IDs from server
+        server_client_ids = [client.get('id') for client in clients if isinstance(client, dict) and client.get('id')]
+        
         for client in clients:
             if isinstance(client, dict):
                 cursor.execute("""
@@ -188,6 +210,16 @@ class LocalDatabase:
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.warning(f"Skipping non-dict client: {client}")
+        
+        # Delete clients that no longer exist on server
+        if server_client_ids:
+            placeholders = ','.join('?' * len(server_client_ids))
+            cursor.execute(f"""
+                DELETE FROM clients 
+                WHERE id NOT IN ({placeholders})
+            """, server_client_ids)
+        else:
+            cursor.execute("DELETE FROM clients")
         
         conn.commit()
         conn.close()

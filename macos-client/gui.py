@@ -325,6 +325,8 @@ class SettingsDialog(QDialog):
 
 
 class LoginDialog(QDialog):
+    OFFLINE_RESULT = 3  # Custom result code for offline mode
+    
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("FontDock Login")
@@ -333,6 +335,7 @@ class LoginDialog(QDialog):
         self.settings_file = APP_SUPPORT_DIR / "settings.json"
         self.setup_ui()
         self.load_server_url()
+        self.load_last_username()
     
     def _parse_url(self, url):
         url = url.strip()
@@ -390,12 +393,15 @@ class LoginDialog(QDialog):
         
         button_layout = QHBoxLayout()
         self.login_button = QPushButton("Login")
+        self.offline_button = QPushButton("Work Offline")
         self.cancel_button = QPushButton("Cancel")
         
         self.login_button.clicked.connect(self.save_and_login)
+        self.offline_button.clicked.connect(self.work_offline)
         self.cancel_button.clicked.connect(self.reject)
         
         button_layout.addWidget(self.login_button)
+        button_layout.addWidget(self.offline_button)
         button_layout.addWidget(self.cancel_button)
         
         layout.addRow(button_layout)
@@ -413,6 +419,15 @@ class LoginDialog(QDialog):
         else:
             self.server_address_input.setText('localhost')
             self.server_port_input.setText('9998')
+    
+    def load_last_username(self):
+        """Pre-fill username from last successful login."""
+        if self.settings_file.exists():
+            with open(self.settings_file, 'r') as f:
+                settings = json.load(f)
+                last_user = settings.get('last_username', '')
+                if last_user:
+                    self.username_input.setText(last_user)
     
     def test_connection(self):
         """Test connection with inline result."""
@@ -477,6 +492,7 @@ class LoginDialog(QDialog):
         settings['server_url'] = server_url
         settings['server_address'] = self.server_address_input.text().strip()
         settings['server_port'] = self.server_port_input.text().strip() or '8000'
+        settings['last_username'] = self.username_input.text().strip()
         
         with open(self.settings_file, 'w') as f:
             json.dump(settings, f, indent=2)
@@ -486,6 +502,30 @@ class LoginDialog(QDialog):
         config.SERVER_URL = server_url
         
         self.accept()
+    
+    def work_offline(self):
+        """Save server URL and launch in offline mode."""
+        server_url = self._build_url()
+        
+        # Save server URL to settings
+        if self.settings_file.exists():
+            with open(self.settings_file, 'r') as f:
+                settings = json.load(f)
+        else:
+            settings = {}
+        
+        settings['server_url'] = server_url
+        settings['server_address'] = self.server_address_input.text().strip()
+        settings['server_port'] = self.server_port_input.text().strip() or '8000'
+        
+        with open(self.settings_file, 'w') as f:
+            json.dump(settings, f, indent=2)
+        
+        # Update config
+        import config
+        config.SERVER_URL = server_url
+        
+        self.done(self.OFFLINE_RESULT)
     
     def get_credentials(self):
         return self.username_input.text(), self.password_input.text()
@@ -899,7 +939,9 @@ class MainWindow(QMainWindow):
         self.api.clear_token()
         
         dialog = LoginDialog(self)
-        if dialog.exec_() == QDialog.Accepted:
+        result = dialog.exec_()
+        
+        if result == QDialog.Accepted:
             # Update server URL from login dialog
             server_url = dialog.get_server_url()
             self.api.server_url = server_url
@@ -916,6 +958,17 @@ class MainWindow(QMainWindow):
                 self.api.clear_token()
                 self.close()
                 return False  # Login failed
+        elif result == LoginDialog.OFFLINE_RESULT:
+            # Work offline - no server authentication
+            server_url = dialog.get_server_url()
+            self.api.server_url = server_url
+            self.setup_ui()
+            self._set_connection_state("disconnected")
+            self.status_bar.showMessage("Working offline — no server connection", 5000)
+            # Load fonts from local DB
+            self.load_all_fonts()
+            self.load_recent()
+            return True
         else:
             self.close()
             return False  # Login cancelled
@@ -1555,7 +1608,8 @@ class MainWindow(QMainWindow):
             active_count = sum(1 for f in fonts if (user_fonts_dir / f['filename']).exists())
             total_count = len(fonts)
             
-            family_item = QListWidgetItem(f"▶ {family_name} ({active_count}/{total_count} active) - {format_type}")
+            collapse_icon = "▼" if not collapse_by_default else "▶"
+            family_item = QListWidgetItem(f"{collapse_icon} {family_name} ({active_count}/{total_count} active) - {format_type}")
             family_item.setData(Qt.UserRole, None)
             family_item.setData(Qt.UserRole + 1, family_name)
             family_item.setBackground(Qt.lightGray)
@@ -2382,7 +2436,8 @@ class MainWindow(QMainWindow):
                 format_type = 'TrueType' if ext in ['.ttf', '.ttc'] else 'OpenType' if ext == '.otf' else 'Unknown'
                 
                 # Family header
-                family_item = QListWidgetItem(f"▶ {family_name} ({len(fonts)} styles) - {format_type}")
+                collapse_icon = "▼" if not collapse_by_default else "▶"
+                family_item = QListWidgetItem(f"{collapse_icon} {family_name} ({len(fonts)} styles) - {format_type}")
                 family_item.setData(Qt.UserRole, None)
                 family_item.setData(Qt.UserRole + 1, family_name)
                 family_item.setBackground(Qt.lightGray)
@@ -2540,54 +2595,26 @@ class MainWindow(QMainWindow):
     def on_collection_selected(self, item):
         collection_id = item.data(Qt.UserRole)
         collection_name = item.text()
-        
+
         self.collection_fonts_list.clear()
-        
-        # Get collection's client
+
+        # Get fonts in this collection grouped by family
         conn = self.db.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT client_id FROM collections WHERE id = ?
+            SELECT f.id, f.postscript_name, f.style_name, f.family_name
+            FROM fonts f
+            JOIN collection_fonts cf ON f.id = cf.font_id
+            WHERE cf.collection_id = ?
+            ORDER BY family_name, style_name
         """, (collection_id,))
-        result = cursor.fetchone()
-        
-        if not result or not result[0]:
-            # No client assigned, show fonts directly grouped by family
-            cursor.execute("""
-                SELECT f.id, f.postscript_name, f.style_name, f.family_name
-                FROM fonts f
-                JOIN collection_fonts cf ON f.id = cf.font_id
-                WHERE cf.collection_id = ?
-                ORDER BY family_name, style_name
-            """, (collection_id,))
-            fonts = cursor.fetchall()
-            conn.close()
-            
-            if not fonts:
-                return
-            
-            self._show_fonts_by_family(fonts)
-            return
-        
-        client_id = result[0]
-        
-        # Get client name
-        cursor.execute("SELECT name FROM clients WHERE id = ?", (client_id,))
-        client_result = cursor.fetchone()
-        client_name = client_result[0] if client_result else "Unknown Client"
+        fonts = cursor.fetchall()
         conn.close()
-        
-        # Show client as a collapsible header
-        from PyQt5.QtGui import QFont
-        client_item = QListWidgetItem(f"▶ {client_name}")
-        client_item.setData(Qt.UserRole, None)
-        client_item.setData(Qt.UserRole + 1, 'client')  # Mark as client header
-        client_item.setData(Qt.UserRole + 2, client_id)  # Store client ID
-        client_item.setData(Qt.UserRole + 3, collection_id)  # Store collection ID
-        font = QFont()
-        font.setBold(True)
-        client_item.setFont(font)
-        self.collection_fonts_list.addItem(client_item)
+
+        if not fonts:
+            return
+
+        self._show_fonts_by_family(fonts)
     
     def _show_fonts_by_family(self, fonts):
         """Helper to show fonts grouped by family"""
@@ -2605,216 +2632,120 @@ class MainWindow(QMainWindow):
                 families[family_name].append(font)
             
             # Load SVG icons
-            active_icon = QIcon(str(Path(__file__).parent / "assets" / "active.svg"))
-            inactive_icon = QIcon(str(Path(__file__).parent / "assets" / "inactive.svg"))
+            assets_dir = Path(__file__).parent / "assets"
+            active_icon = QIcon(str(assets_dir / "active.svg"))
+            cached_icon = QIcon(str(assets_dir / "cached.svg"))
+            remote_icon = QIcon(str(assets_dir / "remote.svg"))
             
             # Add family groups
             for family_name in sorted(families.keys()):
                 family_fonts = families[family_name]
+                ext = ''
+                font_db_entry = self.db.get_font_by_id(family_fonts[0][0]) if family_fonts else None
+                if font_db_entry:
+                    ext = font_db_entry.get('extension', '')
+                format_type = 'TrueType' if ext in ['.ttf', '.ttc'] else 'OpenType' if ext == '.otf' else ''
                 
                 # Add family header
-                family_item = QListWidgetItem(f"    ▶ {family_name} ({len(family_fonts)} styles)")
+                icon = "▼" if not collapse_by_default else "▶"
+                header_text = f"{icon} {family_name} ({len(family_fonts)} styles)"
+                if format_type:
+                    header_text += f" - {format_type}"
+                family_item = QListWidgetItem(header_text)
                 family_item.setData(Qt.UserRole, None)
-                family_item.setData(Qt.UserRole + 1, 'family')  # Mark as family header
-                family_item.setData(Qt.UserRole + 2, family_name)  # Store family name
+                family_item.setData(Qt.UserRole + 1, family_name)  # Family name identifies header
+                family_item.setBackground(Qt.lightGray)
                 font = QFont()
                 font.setBold(True)
                 family_item.setFont(font)
-                family_item.setHidden(collapse_by_default)
                 self.collection_fonts_list.addItem(family_item)
                 
                 # Add individual fonts (initially hidden)
                 for font_data in family_fonts:
                     font_id, postscript_name, style_name, _ = font_data
-                    is_active = self.font_manager.is_font_active(font_id)
                     
-                    # Use status icon
-                    icon = active_icon if is_active else inactive_icon
+                    # Determine state
+                    user_fonts_dir = get_fonts_dir()
+                    font_db = self.db.get_font_by_id(font_id)
+                    cached_path = font_db.get('cached_path') if font_db else None
+                    filename = font_db.get('filename_original', '') if font_db else ''
+                    is_activated = (user_fonts_dir / filename).exists() if filename else False
                     
-                    font_item = QListWidgetItem(icon, f"        {style_name or postscript_name or 'Unknown'}")
+                    if is_activated:
+                        icon = active_icon
+                        state_tag = "Local"
+                    elif cached_path and os.path.exists(cached_path):
+                        icon = cached_icon
+                        state_tag = "Cached"
+                    else:
+                        icon = remote_icon
+                        state_tag = "Remote"
+                    
+                    display_style = style_name or postscript_name or 'Unknown'
+                    preview_text = self.get_preview_text()
+                    font_format = 'TrueType' if ext in ['.ttf', '.ttc'] else 'OpenType' if ext == '.otf' else ext
+                    item_text = f"{preview_text}    {display_style}    {font_format}    [{state_tag}]"
+                    
+                    font_item = QListWidgetItem(icon, item_text)
                     font_item.setData(Qt.UserRole, font_id)
-                    font_item.setData(Qt.UserRole + 1, 'font')  # Mark as font
-                    font_item.setData(Qt.UserRole + 2, family_name)  # Store family name
-                    font_item.setHidden(collapse_by_default)
+                    font_item.setData(Qt.UserRole + 1, None)  # None = font item (not a header)
+                    font_item.setData(Qt.UserRole + 3, state_tag)
                     
-                    # Apply font preview size from settings
-                    font = QFont()
-                    font.setPointSize(self.get_font_preview_size())
-                    font_item.setFont(font)
+                    # Apply font preview if cached
+                    if cached_path and os.path.exists(cached_path):
+                        from PyQt5.QtGui import QFontDatabase
+                        font_id_qt = QFontDatabase.addApplicationFont(cached_path)
+                        if font_id_qt != -1:
+                            font_families_qt = QFontDatabase.applicationFontFamilies(font_id_qt)
+                            if font_families_qt:
+                                font_size = self.get_font_preview_size()
+                                custom_font = QFont(font_families_qt[0], font_size)
+                                if style_name:
+                                    custom_font.setStyleName(style_name)
+                                font_item.setFont(custom_font)
                     
                     self.collection_fonts_list.addItem(font_item)
+                    font_item.setHidden(collapse_by_default)  # Must be after addItem
         
         except Exception as e:
             self.status_bar.showMessage(f"Error loading fonts: {str(e)}", 5000)
     
     def on_collection_font_clicked(self, item):
-        item_type = item.data(Qt.UserRole + 1)
+        family_name = item.data(Qt.UserRole + 1)
         
-        if item_type == 'client':
-            # Toggle client expansion - load and show families
-            client_id = item.data(Qt.UserRole + 2)
-            collection_id = item.data(Qt.UserRole + 3)
-            client_name = item.text().strip().replace("▶ ", "").replace("▼ ", "")
-            is_expanded = item.text().strip().startswith("▼")
+        if family_name:
+            # Family header clicked - toggle expand/collapse
+            is_expanded = item.text().startswith("▼")
+            new_icon = "▶" if is_expanded else "▼"
+            item.setText(item.text().replace("▶" if not is_expanded else "▼", new_icon, 1))
             
-            # Update header icon
-            if is_expanded:
-                # Collapse - remove all families and fonts, just show client
-                item.setText(f"▶ {client_name}")
-                # Remove all items except the client header
-                items_to_remove = []
-                for i in range(self.collection_fonts_list.count()):
-                    list_item = self.collection_fonts_list.item(i)
-                    if list_item != item:
-                        items_to_remove.append(i)
-                
-                # Remove in reverse order to maintain indices
-                for i in reversed(items_to_remove):
-                    self.collection_fonts_list.takeItem(i)
-            else:
-                # Expand - load and show families
-                item.setText(f"▼ {client_name}")
-                
-                # Load fonts for this collection
-                conn = self.db.get_connection()
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT f.id, f.postscript_name, f.style_name, f.family_name
-                    FROM fonts f
-                    JOIN collection_fonts cf ON f.id = cf.font_id
-                    WHERE cf.collection_id = ?
-                    ORDER BY family_name, style_name
-                """, (collection_id,))
-                fonts = cursor.fetchall()
-                conn.close()
-                
-                print(f"DEBUG: Found {len(fonts)} fonts for collection {collection_id}")
-                
-                if fonts:
-                    # Add fonts grouped by family
-                    from collections import defaultdict
-                    from PyQt5.QtGui import QFont, QIcon
-                    
-                    families = defaultdict(list)
-                    for font in fonts:
-                        family_name = font[3] or 'Unknown'
-                        families[family_name].append(font)
-                    
-                    # Load SVG icons
-                    active_icon = QIcon(str(Path(__file__).parent / "assets" / "active.svg"))
-                    inactive_icon = QIcon(str(Path(__file__).parent / "assets" / "inactive.svg"))
-                    
-                    # Add family groups
-                    for family_name in sorted(families.keys()):
-                        family_fonts = families[family_name]
-                        
-                        # Add family header
-                        family_item = QListWidgetItem(f"    ▶ {family_name} ({len(family_fonts)} styles)")
-                        family_item.setData(Qt.UserRole, None)
-                        family_item.setData(Qt.UserRole + 1, 'family')
-                        family_item.setData(Qt.UserRole + 2, family_name)
-                        font = QFont()
-                        font.setBold(True)
-                        family_item.setFont(font)
-                        self.collection_fonts_list.addItem(family_item)
-                        
-                        # Add individual fonts (initially hidden)
-                        for font_data in family_fonts:
-                            font_id, postscript_name, style_name, _ = font_data
-                            is_active = self.font_manager.is_font_active(font_id)
-                            
-                            icon = active_icon if is_active else inactive_icon
-                            
-                            # Get font type from database
-                            font_db_entry = self.db.get_font_by_id(font_id)
-                            extension = font_db_entry.get('extension', '') if font_db_entry else ''
-                            font_type = 'TrueType' if extension in ['.ttf', '.ttc'] else 'OpenType' if extension == '.otf' else extension
-                            
-                            preview_text = self.get_preview_text()
-                            display_style = style_name or postscript_name or 'Unknown'
-                            font_item = QListWidgetItem(icon, f"        {preview_text}    {display_style}    {font_type}")
-                            font_item.setData(Qt.UserRole, font_id)
-                            font_item.setData(Qt.UserRole + 1, 'font')
-                            font_item.setData(Qt.UserRole + 2, family_name)
-                            font_item.setToolTip(f"{display_style}")  # Show font name on hover
-                            font_item.setHidden(True)  # Start collapsed
-                            
-                            # Load and apply the actual font if cached
-                            font_db_entry = self.db.get_font_by_id(font_id)
-                            if font_db_entry and font_db_entry.get('cached_path') and os.path.exists(font_db_entry['cached_path']):
-                                from PyQt5.QtGui import QFontDatabase
-                                font_id_qt = QFontDatabase.addApplicationFont(font_db_entry['cached_path'])
-                                if font_id_qt != -1:
-                                    font_families_qt = QFontDatabase.applicationFontFamilies(font_id_qt)
-                                    if font_families_qt:
-                                        font_size = self.get_font_preview_size()
-                                        custom_font = QFont(font_families_qt[0], font_size)
-                                        if style_name:
-                                            custom_font.setStyleName(style_name)
-                                        font_item.setFont(custom_font)
-                                    else:
-                                        font = QFont()
-                                        font.setPointSize(self.get_font_preview_size())
-                                        font_item.setFont(font)
-                                else:
-                                    font = QFont()
-                                    font.setPointSize(self.get_font_preview_size())
-                                    font_item.setFont(font)
-                            else:
-                                font = QFont()
-                                font.setPointSize(self.get_font_preview_size())
-                                font_item.setFont(font)
-                            
-                            self.collection_fonts_list.addItem(font_item)
-                else:
-                    # No fonts found
-                    no_fonts_item = QListWidgetItem("    (No fonts in this collection)")
-                    from PyQt5.QtGui import QFont
-                    font = QFont()
-                    font.setItalic(True)
-                    no_fonts_item.setFont(font)
-                    self.collection_fonts_list.addItem(no_fonts_item)
-                    self.status_bar.showMessage("No fonts found in collection", 3000)
+            # Walk forward from this item, toggling visibility until next header
+            current_index = self.collection_fonts_list.row(item)
+            i = current_index + 1
+            while i < self.collection_fonts_list.count():
+                next_item = self.collection_fonts_list.item(i)
+                if next_item.data(Qt.UserRole + 1):  # Hit next family header
+                    break
+                next_item.setHidden(is_expanded)
+                i += 1
         
-        elif item_type == 'family':
-            # Toggle family expansion
-            family_name = item.data(Qt.UserRole + 2)
-            is_expanded = item.text().strip().startswith("▼")
-            
-            # Update header icon
-            if is_expanded:
-                item.setText(item.text().replace("▼", "▶"))
-            else:
-                item.setText(item.text().replace("▶", "▼"))
-            
-            # Toggle visibility of family fonts
-            for i in range(self.collection_fonts_list.count()):
-                list_item = self.collection_fonts_list.item(i)
-                if list_item.data(Qt.UserRole + 1) == 'font':
-                    if list_item.data(Qt.UserRole + 2) == family_name:
-                        list_item.setHidden(is_expanded)
-        
-        elif item_type == 'font':
-            # Toggle font activation
+        else:
+            # Font item clicked - toggle activation
             font_id = item.data(Qt.UserRole)
             if font_id:
                 is_active = self.font_manager.is_font_active(font_id)
-                print(f"DEBUG: Font {font_id} is_active={is_active}")
                 
                 try:
                     if is_active:
                         result = self.font_manager.deactivate_font(font_id)
-                        print(f"DEBUG: Deactivation result: {result}")
                         self.status_bar.showMessage(result.get('message', 'Font deactivated'), 2000)
                     else:
                         result = self.font_manager.activate_font(font_id)
-                        print(f"DEBUG: Activation result: {result}")
                         self.status_bar.showMessage(result.get('message', 'Font activated'), 2000)
                     
                     # Reload all tabs to sync status
                     self.reload_all_tabs()
                 except Exception as e:
-                    print(f"DEBUG: Error during activation/deactivation: {e}")
                     self.status_bar.showMessage(f"Error: {str(e)}", 5000)
     
     def on_collection_activate(self):
@@ -3216,13 +3147,13 @@ class MainWindow(QMainWindow):
                 self.status_bar.showMessage("Settings saved!", 3000)
     
     def on_logout(self):
-        reply = QMessageBox.question(
-            self,
-            "Logout",
-            "Are you sure you want to logout?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("Logout")
+        msg.setText("Are you sure you want to logout?")
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg.setDefaultButton(QMessageBox.No)
+        reply = msg.exec_()
         
         if reply == QMessageBox.Yes:
             self.api.clear_token()
