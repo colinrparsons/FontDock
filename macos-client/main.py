@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 import sys
 import logging
+import os
+
+# Suppress Qt bitmap font metric warnings (harmless, noisy)
+os.environ['QT_LOGGING_RULES'] = 'qt.qpa.fonts=false'
+
 from PyQt5.QtWidgets import QApplication
 from config import setup_logging
 from gui import MainWindow

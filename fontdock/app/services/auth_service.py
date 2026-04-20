@@ -73,8 +73,10 @@ def decode_token(token: str) -> Optional[TokenData]:
 
 
 def create_user(db: Session, username: str, email: str, password: str, is_admin: bool = False,
+                first_name: str = None, last_name: str = None,
                 can_create_users: bool = False, can_delete_users: bool = False,
                 can_upload_fonts: bool = False, can_download_fonts: bool = True,
+                can_delete_fonts: bool = False,
                 can_create_collections: bool = False, can_create_clients: bool = False) -> User:
     """Create a new user."""
     hashed_password = get_password_hash(password)
@@ -82,11 +84,14 @@ def create_user(db: Session, username: str, email: str, password: str, is_admin:
         username=username,
         email=email,
         password_hash=hashed_password,
+        first_name=first_name,
+        last_name=last_name,
         is_admin=is_admin,
         can_create_users=can_create_users,
         can_delete_users=can_delete_users,
         can_upload_fonts=can_upload_fonts,
         can_download_fonts=can_download_fonts,
+        can_delete_fonts=can_delete_fonts,
         can_create_collections=can_create_collections,
         can_create_clients=can_create_clients,
     )

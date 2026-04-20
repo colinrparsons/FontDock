@@ -21,13 +21,13 @@ if (!token) {
             </select>
         </div>
         <div style="display: flex; gap: 0.5rem;">
-            <button class="btn" onclick="refreshLogs()" style="background: #1a5c7a; font-size: 0.85rem;">Refresh</button>
-            <button class="btn" onclick="downloadLogs()" style="background: #6c757d; font-size: 0.85rem;">Download</button>
-            <button class="btn" onclick="clearLogs()" style="background: #dc3545; font-size: 0.85rem;">Clear</button>
+            <button class="btn" onclick="refreshLogs()" style="background: #1a5c7a;">Refresh</button>
+            <button class="btn" onclick="downloadLogs()" style="background: #6c757d;">Download</button>
+            <button class="btn" onclick="clearLogs()" style="background: #dc3545;">Clear</button>
         </div>
     </div>
     
-    <div id="log-content" style="background: #0f0f1a; border: 1px solid #1a5c7a; border-radius: 4px; padding: 1rem; font-family: 'Courier New', monospace; font-size: 0.8rem; color: #e0e0e0; white-space: pre-wrap; word-wrap: break-word; max-height: 70vh; overflow-y: auto;">
+    <div id="log-content" style="background: #0f0f1a; border: 1px solid #1a5c7a; border-radius: 4px; padding: 1rem; font-family: 'Courier New', monospace; font-size: 12px; color: #e0e0e0; white-space: pre-wrap; word-wrap: break-word; max-height: 70vh; overflow-y: auto;">
         Loading logs...
     </div>
     
@@ -36,7 +36,7 @@ if (!token) {
             <input type="checkbox" id="auto-refresh" checked>
             Auto-refresh every 5 seconds
         </label>
-        <span id="last-updated" style="color: #6c757d; font-size: 0.75rem;"></span>
+        <span id="last-updated" class="text-small" style="color: #6c757d;"></span>
     </div>
 </div>
 

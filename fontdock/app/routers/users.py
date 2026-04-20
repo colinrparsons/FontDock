@@ -1,8 +1,11 @@
 """Users router (admin only)."""
 import logging
-from typing import Optional
+import csv
+import io
+from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -34,6 +37,120 @@ async def list_users(
     users = query.offset(skip).limit(limit).all()
     
     return UserList(items=users, total=total)
+
+
+@router.post("/import-csv")
+async def bulk_import_users(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Bulk import users from a CSV file (admin only).
+    
+    CSV must have header row with columns:
+    - username, email, password (required)
+    - first_name, last_name (optional)
+    - is_admin, can_create_users, can_delete_users, can_upload_fonts,
+      can_download_fonts, can_delete_fonts, can_create_collections, can_create_clients (optional, true/false)
+    """
+    from app.services.auth_service import get_user_by_username, get_user_by_email
+    
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be a CSV (.csv)"
+        )
+    
+    content = await file.read()
+    text = content.decode('utf-8')
+    reader = csv.DictReader(io.StringIO(text))
+    
+    success = 0
+    failed = 0
+    errors = []
+    
+    for row_num, row in enumerate(reader, start=2):  # Row 2 = first data row (1 is header)
+        username = row.get("username", "").strip()
+        email = row.get("email", "").strip()
+        password = row.get("password", "").strip()
+        
+        if not username or not email or not password:
+            failed += 1
+            errors.append(f"Row {row_num}: Missing required field(s)")
+            continue
+        
+        # Check for duplicate username
+        if get_user_by_username(db, username):
+            failed += 1
+            errors.append(f"Row {row_num}: Username '{username}' already exists")
+            continue
+        
+        # Check for duplicate email
+        if get_user_by_email(db, email):
+            failed += 1
+            errors.append(f"Row {row_num}: Email '{email}' already exists")
+            continue
+        
+        def parse_bool(val, default=False):
+            if val is None:
+                return default
+            return val.strip().lower() in ('true', '1', 'yes')
+        
+        try:
+            new_user = create_user(
+                db,
+                username=username,
+                email=email,
+                password=password,
+                first_name=row.get("first_name", "").strip() or None,
+                last_name=row.get("last_name", "").strip() or None,
+                is_admin=parse_bool(row.get("is_admin")),
+                can_create_users=parse_bool(row.get("can_create_users")),
+                can_delete_users=parse_bool(row.get("can_delete_users")),
+                can_upload_fonts=parse_bool(row.get("can_upload_fonts")),
+                can_download_fonts=parse_bool(row.get("can_download_fonts"), default=True),
+                can_delete_fonts=parse_bool(row.get("can_delete_fonts")),
+                can_create_collections=parse_bool(row.get("can_create_collections")),
+                can_create_clients=parse_bool(row.get("can_create_clients")),
+            )
+            success += 1
+            logger.info(f"[AUDIT] Bulk import created user: ID={new_user.id}, username='{new_user.username}', admin='{current_user.username}'")
+        except Exception as e:
+            failed += 1
+            errors.append(f"Row {row_num} ({username}): {str(e)}")
+    
+    result = {
+        "success": True,
+        "imported": success,
+        "failed": failed,
+        "total": success + failed,
+    }
+    if errors:
+        result["errors"] = errors[:20]  # Cap at 20 errors in response
+    
+    return result
+
+
+@router.get("/import-template")
+async def download_csv_template(
+    current_user = Depends(get_current_admin),
+):
+    """Download a CSV template for bulk user import."""
+    header = "first_name,last_name,username,email,password,is_admin,can_create_users,can_delete_users,can_upload_fonts,can_download_fonts,can_delete_fonts,can_create_collections,can_create_clients"
+    
+    example_rows = [
+        "John,Doe,jdoe,jdoe@company.com,ChangeMe123,false,false,false,true,true,false,false,false",
+        "Admin,User,admin,admin@company.com,AdminPass456,true,true,true,true,true,true,true,true",
+        "Jane,Designer,designer,designer@company.com,DesignPass789,false,false,false,true,true,false,false,false",
+    ]
+    
+    csv_content = header + "\n" + "\n".join(example_rows) + "\n"
+    
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=fontdock_users_template.csv"}
+    )
 
 
 @router.get("/{user_id}", response_model=User)
@@ -85,11 +202,14 @@ async def create_new_user(
         username=data.username,
         email=data.email,
         password=data.password,
+        first_name=data.first_name,
+        last_name=data.last_name,
         is_admin=data.is_admin,
         can_create_users=data.can_create_users,
         can_delete_users=data.can_delete_users,
         can_upload_fonts=data.can_upload_fonts,
         can_download_fonts=data.can_download_fonts,
+        can_delete_fonts=data.can_delete_fonts,
         can_create_collections=data.can_create_collections,
         can_create_clients=data.can_create_clients,
     )

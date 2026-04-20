@@ -26,7 +26,9 @@ if (!token) {
         <table>
             <thead>
                 <tr>
-                    <th>User</th>
+                    <th>First Name</th>
+                    <th>Last Name</th>
+                    <th>Username</th>
                     <th>Admin</th>
                     <th>Create Users</th>
                     <th>Delete Users</th>
@@ -41,10 +43,9 @@ if (!token) {
             <tbody>
                 {% for user in users %}
                 <tr data-username="{{ user.username }}">
-                    <td>
-                        <strong>{{ user.username }}</strong><br>
-                        <small style="color: #666;">{{ user.first_name or '' }} {{ user.last_name or '' }}</small>
-                    </td>
+                    <td>{{ user.first_name or '' }}</td>
+                    <td>{{ user.last_name or '' }}</td>
+                    <td><strong>{{ user.username }}</strong></td>
                     <td>
                         <input type="checkbox" class="perm-check" data-user="{{ user.id }}" data-perm="is_admin" {% if user.is_admin %}checked{% endif %}>
                     </td>
@@ -70,7 +71,7 @@ if (!token) {
                         <input type="checkbox" class="perm-check" data-user="{{ user.id }}" data-perm="can_create_clients" {% if user.can_create_clients %}checked{% endif %} {% if user.is_admin %}disabled{% endif %}>
                     </td>
                     <td>
-                        <button class="btn save-perms" data-user="{{ user.id }}" style="font-size: 0.8rem; padding: 0.25rem 0.5rem;">Save</button>
+                        <button class="btn save-perms" data-user="{{ user.id }}" style="padding: 0.25rem 0.5rem;">Save</button>
                         <span class="save-status" id="status-{{ user.id }}"></span>
                     </td>
                 </tr>
@@ -94,7 +95,7 @@ if (!token) {
     cursor: not-allowed;
 }
 .save-status {
-    font-size: 0.8rem;
+    font-size: 12px;
     margin-left: 0.5rem;
 }
 .save-status.success { color: #4ade80; }

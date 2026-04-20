@@ -17,7 +17,7 @@ if (!token) {
     <p style="color: #6c757d; margin-bottom: 1rem;">
         Import fonts from a folder structure on the server. Expected structure:
     </p>
-    <pre style="background: #f8f9fa; padding: 1rem; border-radius: 4px; font-size: 0.85rem; margin-bottom: 1rem; overflow-x: auto;">/path/to/fonts/
+    <pre class="mono" style="background: #f8f9fa; padding: 1rem; border-radius: 4px; margin-bottom: 1rem; overflow-x: auto;">/path/to/fonts/
   Client1/
     font1.ttf
     font2.otf
@@ -27,7 +27,7 @@ if (!token) {
     
     <div style="display: flex; gap: 1rem; align-items: flex-end;">
         <div style="flex: 1;">
-            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Selected Folder</label>
+            <label style="display: block; margin-bottom: 0.5rem;">Selected Folder</label>
             <input type="text" id="folder-path" class="search-box" placeholder="Click Browse to select folder..." style="width: 100%;" readonly>
         </div>
         <button class="btn" onclick="openFolderBrowser()">Browse...</button>
@@ -48,8 +48,8 @@ if (!token) {
     
     <div style="display: flex; gap: 1rem; align-items: flex-end;">
         <div style="flex: 1;">
-            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">ZIP File</label>
-            <input type="file" id="zip-file" accept=".zip" style="width: 100%; padding: 0.5rem; border: 1px solid #dee2e6; border-radius: 4px;">
+            <label style="display: block; margin-bottom: 0.5rem;">ZIP File</label>
+            <input type="file" id="zip-file" accept=".zip" class="search-box" style="width: 100%;">
         </div>
         <button class="btn" onclick="uploadZip()">Upload & Import</button>
     </div>
@@ -104,19 +104,19 @@ async function startImport() {
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
                     <div style="background: #f8f9fa; padding: 1rem; border-radius: 4px; text-align: center;">
                         <div style="font-size: 2rem; color: #e94560; font-weight: bold;">${data.results.total}</div>
-                        <div style="color: #6c757d; font-size: 0.85rem;">Total Fonts</div>
+                        <div class="text-small" style="color: #6c757d;">Total Fonts</div>
                     </div>
                     <div style="background: #f8f9fa; padding: 1rem; border-radius: 4px; text-align: center;">
                         <div style="font-size: 2rem; color: #28a745; font-weight: bold;">${data.results.imported}</div>
-                        <div style="color: #6c757d; font-size: 0.85rem;">Imported</div>
+                        <div class="text-small" style="color: #6c757d;">Imported</div>
                     </div>
                     <div style="background: #f8f9fa; padding: 1rem; border-radius: 4px; text-align: center;">
                         <div style="font-size: 2rem; color: #17a2b8; font-weight: bold;">${data.results.updated}</div>
-                        <div style="color: #6c757d; font-size: 0.85rem;">Updated</div>
+                        <div class="text-small" style="color: #6c757d;">Updated</div>
                     </div>
                     <div style="background: #f8f9fa; padding: 1rem; border-radius: 4px; text-align: center;">
                         <div style="font-size: 2rem; color: #dc3545; font-weight: bold;">${data.results.failed}</div>
-                        <div style="color: #6c757d; font-size: 0.85rem;">Failed</div>
+                        <div class="text-small" style="color: #6c757d;">Failed</div>
                     </div>
                 </div>
             `;
@@ -133,7 +133,7 @@ async function startImport() {
                 html += `
                     <div style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 1rem; border-radius: 4px;">
                         <strong>Errors:</strong>
-                        <ul style="margin: 0.5rem 0 0 1rem; font-size: 0.85rem;">
+                        <ul class="text-small" style="margin: 0.5rem 0 0 1rem;">
                             ${data.results.errors.map(e => `<li>${e}</li>`).join('')}
                         </ul>
                     </div>
@@ -263,7 +263,7 @@ function selectCurrentFolder() {
             <h3 style="margin: 0;">Select Folder</h3>
             <button onclick="closeFolderBrowser()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">&times;</button>
         </div>
-        <div style="background: #f8f9fa; padding: 0.5rem 1rem; border-radius: 4px; margin-bottom: 1rem; font-family: monospace; font-size: 0.85rem; word-break: break-all;" id="current-path">/</div>
+        <div class="mono" style="background: #f8f9fa; padding: 0.5rem 1rem; border-radius: 4px; margin-bottom: 1rem; word-break: break-all;" id="current-path">/</div>
         <div id="folder-list" style="flex: 1; overflow-y: auto; max-height: 400px; border: 1px solid #ddd; border-radius: 4px;">
             <p style="color: #6c757d; padding: 1rem;">Loading...</p>
         </div>

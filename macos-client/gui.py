@@ -13,7 +13,7 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from api_client import FontDockAPI
 from database import LocalDatabase
 from font_manager import FontManager
-from config import APP_SUPPORT_DIR
+from config import APP_SUPPORT_DIR, LOG_PATH
 from http_server import FontDockHTTPServer
 
 if sys.platform == 'darwin':
@@ -560,17 +560,30 @@ class MainWindow(QMainWindow):
     
     def clear_cache(self):
         """Clear local cache and database."""
-        reply = QMessageBox.question(
-            self,
-            'Clear Cache & Database',
-            'This will delete all local font data and cache.\n\n'
-            'You will need to sync again to download fonts.\n\n'
-            'Are you sure you want to continue?',
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle('Clear Cache & Database')
+        msg.setText('Are you sure you want to clear the cache and database?')
+        msg.setInformativeText(
+            'This will remove all cached fonts. You will not be able to work offline '
+            'or activate fonts until you connect to the server and sync again.'
         )
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg.setDefaultButton(QMessageBox.No)
+        reply = msg.exec_()
         
         if reply == QMessageBox.Yes:
+            # Second confirmation
+            reply2 = QMessageBox.warning(
+                self,
+                'Confirm Clear Cache',
+                'Are you sure? This cannot be undone.',
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply2 != QMessageBox.Yes:
+                return
+            
             try:
                 import shutil
                 import time
@@ -837,6 +850,13 @@ class MainWindow(QMainWindow):
                         QCheckBox::indicator {
                             width: 16px;
                             height: 16px;
+                            border: 1px solid #666666;
+                            border-radius: 3px;
+                            background-color: #2a2a2a;
+                        }
+                        QCheckBox::indicator:checked {
+                            background-color: #00bcd4;
+                            border-color: #00bcd4;
                         }
                         QGroupBox {
                             color: #ffffff;
@@ -854,6 +874,18 @@ class MainWindow(QMainWindow):
                     """)
                 else:
                     self.setStyleSheet("")  # Reset to default
+                    # Light mode: status bar labels in black
+                    if hasattr(self, 'last_sync_label'):
+                        self.last_sync_label.setStyleSheet("color: #000000; padding: 0 8px;")
+                    if hasattr(self, 'cache_count_label'):
+                        self.cache_count_label.setStyleSheet("color: #000000; padding: 0 8px;")
+                
+                # Dark mode: status bar labels in white
+                if dark_mode:
+                    if hasattr(self, 'last_sync_label'):
+                        self.last_sync_label.setStyleSheet("color: #ffffff; padding: 0 8px;")
+                    if hasattr(self, 'cache_count_label'):
+                        self.cache_count_label.setStyleSheet("color: #ffffff; padding: 0 8px;")
                 
                 # Apply app font size
                 app_font_size = settings.get('app_font_size', 12)
@@ -905,12 +937,26 @@ class MainWindow(QMainWindow):
         
         # Last sync indicator
         self.last_sync_label = QLabel("Last sync: never")
-        self.last_sync_label.setStyleSheet("color: #9ca3af; padding: 0 8px;")
+        # Determine status bar text color based on current dark mode setting
+        settings_file = APP_SUPPORT_DIR / "settings.json"
+        _status_color = "#ffffff"
+        if settings_file.exists():
+            try:
+                with open(settings_file, 'r') as _f:
+                    _s = json.load(_f)
+                if not _s.get('dark_mode', False):
+                    _status_color = "#000000"
+            except Exception:
+                _status_color = "#000000"
+        else:
+            _status_color = "#000000"
+        
+        self.last_sync_label.setStyleSheet(f"color: {_status_color}; padding: 0 8px;")
         self.status_bar.addPermanentWidget(self.last_sync_label)
         
         # Cache count indicator
         self.cache_count_label = QLabel("0 fonts cached")
-        self.cache_count_label.setStyleSheet("color: #9ca3af; padding: 0 8px;")
+        self.cache_count_label.setStyleSheet(f"color: {_status_color}; padding: 0 8px;")
         self.status_bar.addPermanentWidget(self.cache_count_label)
         
         # Timer to refresh "last sync" relative time
@@ -979,18 +1025,21 @@ class MainWindow(QMainWindow):
         self.clients_tab = QWidget()
         self.recent_tab = QWidget()
         self.system_fonts_tab = QWidget()
+        self.logs_tab = QWidget()
         
         self.setup_fonts_tab()
         self.setup_collections_tab()
         self.setup_clients_tab()
         self.setup_recent_tab()
         self.setup_system_fonts_tab()
+        self.setup_logs_tab()
         
         self.tabs.addTab(self.fonts_tab, "Fonts")
         self.tabs.addTab(self.collections_tab, "Collections")
         self.tabs.addTab(self.clients_tab, "Clients")
         self.tabs.addTab(self.recent_tab, "Recent")
         self.tabs.addTab(self.system_fonts_tab, "System Fonts")
+        self.tabs.addTab(self.logs_tab, "Logs")
         
         # Refresh icons when switching tabs (to show fonts activated via InDesign)
         self.tabs.currentChanged.connect(self.on_tab_changed)
@@ -1216,6 +1265,104 @@ class MainWindow(QMainWindow):
         self._system_font_families = []
         self._load_system_fonts()
     
+    def setup_logs_tab(self):
+        """Tab showing the FontDock log file contents."""
+        layout = QVBoxLayout()
+        
+        # Toolbar
+        toolbar = QHBoxLayout()
+        
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.clicked.connect(self.refresh_logs)
+        toolbar.addWidget(refresh_btn)
+        
+        clear_btn = QPushButton("Clear Log")
+        clear_btn.clicked.connect(self.clear_log)
+        toolbar.addWidget(clear_btn)
+        
+        # Log level filter
+        self.log_level_combo = QComboBox()
+        self.log_level_combo.addItems(["All", "DEBUG", "INFO", "WARNING", "ERROR"])
+        self.log_level_combo.currentTextChanged.connect(self.refresh_logs)
+        toolbar.addWidget(QLabel("Level:"))
+        toolbar.addWidget(self.log_level_combo)
+        
+        toolbar.addStretch()
+        
+        # Log file path label
+        self.log_path_label = QLabel(f"Log file: {LOG_PATH}")
+        self.log_path_label.setStyleSheet("color: #9ca3af; font-style: italic; padding: 4px;")
+        self.log_path_label.setWordWrap(True)
+        
+        layout.addLayout(toolbar)
+        layout.addWidget(self.log_path_label)
+        
+        # Log text display
+        from PyQt5.QtWidgets import QTextEdit
+        self.log_text = QTextEdit()
+        self.log_text.setReadOnly(True)
+        self.log_text.setLineWrapMode(QTextEdit.NoWrap)
+        self.log_text.setFontFamily("Menlo")
+        self.log_text.setFontPointSize(10)
+        layout.addWidget(self.log_text)
+        
+        self.logs_tab.setLayout(layout)
+        
+        # Initial load
+        self.refresh_logs()
+    
+    def refresh_logs(self):
+        """Read and display the log file, filtering by selected level."""
+        try:
+            level_filter = self.log_level_combo.currentText()
+            
+            if not LOG_PATH.exists():
+                self.log_text.setPlainText("No log file found.")
+                return
+            
+            with open(LOG_PATH, 'r') as f:
+                lines = f.readlines()
+            
+            # Keep last 2000 lines to avoid memory issues
+            if len(lines) > 2000:
+                lines = lines[-2000:]
+            
+            # Filter by log level
+            if level_filter != "All":
+                filtered = []
+                for line in lines:
+                    if f" - {level_filter} - " in line:
+                        filtered.append(line)
+                lines = filtered
+            
+            self.log_text.setPlainText(''.join(lines))
+            
+            # Auto-scroll to bottom
+            from PyQt5.QtGui import QTextCursor
+            cursor = self.log_text.textCursor()
+            cursor.movePosition(QTextCursor.End)
+            self.log_text.setTextCursor(cursor)
+            
+        except Exception as e:
+            self.log_text.setPlainText(f"Error reading log file: {e}")
+    
+    def clear_log(self):
+        """Clear the log file contents."""
+        reply = QMessageBox.warning(
+            self,
+            'Clear Log File',
+            'Are you sure you want to clear the log file?',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            try:
+                with open(LOG_PATH, 'w') as f:
+                    f.write('')
+                self.refresh_logs()
+            except Exception as e:
+                QMessageBox.critical(self, 'Error', f'Failed to clear log: {e}')
+
     def _load_system_fonts(self):
         """Enumerate system fonts using QFontDatabase and populate the list."""
         from PyQt5.QtGui import QFontDatabase, QFont, QIcon
@@ -2108,6 +2255,8 @@ class MainWindow(QMainWindow):
             self.update_collection_fonts_icons()
         elif tab_name == "Clients":
             self.update_client_fonts_icons()
+        elif tab_name == "Logs":
+            self.refresh_logs()
     
     def update_fonts_tab_icons(self):
         """Update only the activation icons in Fonts tab without rebuilding."""

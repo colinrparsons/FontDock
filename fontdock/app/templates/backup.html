@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+
+{% block title %}Backup & Restore - FontDock{% endblock %}
+
+{% block content %}
+<script>
+const token = localStorage.getItem('token');
+if (!token) {
+    window.location.href = '/ui/login';
+}
+</script>
+
+<h2>Backup & Restore</h2>
+
+<div class="card">
+    <h3>Schedule Settings</h3>
+    <p class="text-muted">Automatic backups include the database and all font files in a single ZIP. Only the <b>2 most recent</b> backups are kept.</p>
+    <div style="display: flex; align-items: center; gap: 1rem; margin-top: 0.5rem;">
+        <label>Scheduled backup:</label>
+        <select id="schedule-select" class="search-box" style="width: auto; min-width: 150px;">
+            <option value="never">Never</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly (default)</option>
+            <option value="monthly">Monthly</option>
+        </select>
+        <button class="btn" onclick="saveSchedule()" id="save-schedule-btn">Save</button>
+        <span id="schedule-result" class="text-muted"></span>
+    </div>
+    <p class="text-small" style="color: #a0a0a0; margin-top: 0.5rem;" id="last-backup-info">Last backup: loading...</p>
+</div>
+
+<div class="card">
+    <h3>Create Backup Now</h3>
+    <p class="text-muted">Create a full backup (database + all font files) as a ZIP archive.</p>
+    <button class="btn" onclick="createBackup()" id="backup-btn">Create Full Backup</button>
+    <span id="backup-result" class="text-muted" style="margin-left: 1rem;"></span>
+</div>
+
+<div class="card">
+    <h3>Upload & Restore</h3>
+    <p class="text-muted">Upload a FontDock backup ZIP from another server to restore (migrate). The server will restart after restore.</p>
+    <input type="file" id="restore-file" accept=".zip" class="search-box" style="width: auto;">
+    <button class="btn" style="background: #f59e0b;" onclick="restoreUpload()" id="restore-btn">Restore from Upload</button>
+    <span id="restore-result" class="text-muted" style="margin-left: 1rem;"></span>
+</div>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <h3 style="margin: 0;">Available Backups</h3>
+        <button class="btn" onclick="loadBackups()">Refresh</button>
+    </div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Filename</th>
+                <th>Size</th>
+                <th>Created</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="backups-list">
+            <tr><td colspan="4" style="text-align: center; color: #666;">Loading...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<script>
+function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+async function loadSchedule() {
+    try {
+        const response = await fetch('/api/admin/backup-settings', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (response.ok) {
+            const data = await response.json();
+            document.getElementById('schedule-select').value = data.schedule;
+            if (data.last_backup) {
+                document.getElementById('last-backup-info').textContent = 'Last backup: ' + new Date(data.last_backup).toLocaleString();
+            } else {
+                document.getElementById('last-backup-info').textContent = 'Last backup: never';
+            }
+        }
+    } catch (err) {
+        console.error('Failed to load schedule:', err);
+    }
+}
+
+async function saveSchedule() {
+    const schedule = document.getElementById('schedule-select').value;
+    const btn = document.getElementById('save-schedule-btn');
+    const result = document.getElementById('schedule-result');
+    btn.disabled = true;
+    result.textContent = 'Saving...';
+    
+    try {
+        const response = await fetch('/api/admin/backup-settings?schedule=' + schedule, {
+            method: 'PUT',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (response.ok) {
+            result.innerHTML = '<span style="color: #4ade80;">Schedule saved</span>';
+        } else {
+            const data = await response.json();
+            result.innerHTML = '<span style="color: #f87171;">' + (data.detail || 'Failed') + '</span>';
+        }
+    } catch (err) {
+        result.innerHTML = '<span style="color: #f87171;">Error: ' + err.message + '</span>';
+    } finally {
+        btn.disabled = false;
+        setTimeout(() => { result.textContent = ''; }, 3000);
+    }
+}
+
+async function loadBackups() {
+    try {
+        const response = await fetch('/api/admin/backups', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            const tbody = document.getElementById('backups-list');
+            
+            if (data.backups.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #666;">No backups found</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = data.backups.map(b => `
+                <tr>
+                    <td class="mono">${b.filename}</td>
+                    <td>${formatBytes(b.size)}</td>
+                    <td>${new Date(b.created_at).toLocaleString()}</td>
+                    <td>
+                        <button class="btn" onclick="downloadBackup('${b.filename}')">Download</button>
+                        <button class="btn" style="background: #f59e0b;" onclick="restoreBackup('${b.filename}')">Restore</button>
+                        <button class="btn" style="background: #dc3545;" onclick="deleteBackup('${b.filename}')">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+        } else if (response.status === 401) {
+            location.href = '/ui/login';
+        }
+    } catch (err) {
+        console.error('Failed to load backups:', err);
+    }
+}
+
+async function createBackup() {
+    const btn = document.getElementById('backup-btn');
+    const result = document.getElementById('backup-result');
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+    result.textContent = '';
+    
+    try {
+        const response = await fetch('/api/admin/backup', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            result.innerHTML = '<span style="color: #4ade80;">Full backup created: ' + data.backup_file + '</span>';
+            loadBackups();
+            loadSchedule();
+        } else {
+            const data = await response.json();
+            result.innerHTML = '<span style="color: #f87171;">' + (data.detail || 'Failed') + '</span>';
+        }
+    } catch (err) {
+        result.innerHTML = '<span style="color: #f87171;">Error: ' + err.message + '</span>';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Create Full Backup';
+    }
+}
+
+async function downloadBackup(filename) {
+    try {
+        const response = await fetch('/api/admin/backups/' + encodeURIComponent(filename), {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (response.ok) {
+            const blob = await response.blob();
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        } else {
+            alert('Download failed');
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+async function restoreBackup(filename) {
+    if (!confirm('Restore from ' + filename + '?\n\nThis will replace the database AND all font files. The server will restart.')) return;
+    if (!confirm('Are you sure? This cannot be undone.')) return;
+    
+    try {
+        const response = await fetch('/api/admin/restore?filename=' + encodeURIComponent(filename), {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        
+        if (response.ok) {
+            alert('Full restore complete. Server restarting... Please wait 5 seconds and refresh.');
+            setTimeout(() => location.reload(), 5000);
+        } else {
+            const data = await response.json();
+            alert('Restore failed: ' + (data.detail || 'Unknown error'));
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+async function restoreUpload() {
+    const fileInput = document.getElementById('restore-file');
+    const result = document.getElementById('restore-result');
+    
+    if (!fileInput.files.length) {
+        result.innerHTML = '<span style="color: #f87171;">Select a ZIP file first</span>';
+        return;
+    }
+    
+    if (!confirm('Restore from uploaded ZIP? This will replace the database AND all font files.\n\nThe server will restart after restore.')) return;
+    if (!confirm('Are you sure? This cannot be undone.')) return;
+    
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    
+    result.textContent = 'Uploading & restoring...';
+    
+    try {
+        const response = await fetch('/api/admin/restore-upload', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token },
+            body: formData
+        });
+        
+        if (response.ok) {
+            alert('Full restore complete. Server restarting... Please wait 5 seconds and refresh.');
+            setTimeout(() => location.reload(), 5000);
+        } else {
+            const data = await response.json();
+            result.innerHTML = '<span style="color: #f87171;">' + (data.detail || 'Failed') + '</span>';
+        }
+    } catch (err) {
+        result.innerHTML = '<span style="color: #f87171;">Error: ' + err.message + '</span>';
+    }
+}
+
+async function deleteBackup(filename) {
+    if (!confirm('Delete backup ' + filename + '?')) return;
+    
+    try {
+        const response = await fetch('/api/admin/backups/' + encodeURIComponent(filename), {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        
+        if (response.ok) {
+            loadBackups();
+        } else {
+            const data = await response.json();
+            alert('Delete failed: ' + (data.detail || 'Unknown error'));
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+// Load on page load
+loadSchedule();
+loadBackups();
+</script>
+{% endblock %}

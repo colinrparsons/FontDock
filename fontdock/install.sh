@@ -54,9 +54,11 @@ echo "📂 Creating required directories..."
 mkdir -p $INSTALL_DIR/storage/fonts
 mkdir -p $INSTALL_DIR/logs
 mkdir -p $INSTALL_DIR/uploads
+mkdir -p $INSTALL_DIR/backups
 chown -R $SERVICE_USER:$SERVICE_USER $INSTALL_DIR/storage
 chown -R $SERVICE_USER:$SERVICE_USER $INSTALL_DIR/logs
 chown -R $SERVICE_USER:$SERVICE_USER $INSTALL_DIR/uploads
+chown -R $SERVICE_USER:$SERVICE_USER $INSTALL_DIR/backups
 
 echo ""
 echo "⚙️  Creating configuration file..."

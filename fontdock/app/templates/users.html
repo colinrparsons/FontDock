@@ -17,27 +17,27 @@ if (!token) {
     <form id="create-user-form">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
             <div style="margin: 0;">
-                <label style="font-size: 13px;">First Name:</label>
-                <input type="text" id="first_name" class="search-box" style="width: 100%; margin-top: 2px;" required>
+                <label>First Name:</label>
+                <input type="text" id="first_name" class="search-box" style="width: 100%; margin: 2px 0 0 0;" required>
             </div>
             <div style="margin: 0;">
-                <label style="font-size: 13px;">Last Name:</label>
-                <input type="text" id="last_name" class="search-box" style="width: 100%; margin-top: 2px;" required>
+                <label>Last Name:</label>
+                <input type="text" id="last_name" class="search-box" style="width: 100%; margin: 2px 0 0 0;" required>
             </div>
             <div style="margin: 0;">
-                <label style="font-size: 13px;">Username (Login):</label>
-                <input type="text" id="username" class="search-box" style="width: 100%; margin-top: 2px;" required>
+                <label>Username (Login):</label>
+                <input type="text" id="username" class="search-box" style="width: 100%; margin: 2px 0 0 0;" required>
             </div>
             <div style="margin: 0;">
-                <label style="font-size: 13px;">Email:</label>
-                <input type="email" id="email" class="search-box" style="width: 100%; margin-top: 2px;" required>
+                <label>Email:</label>
+                <input type="email" id="email" class="search-box" style="width: 100%; margin: 2px 0 0 0;" required>
             </div>
             <div style="margin: 0;">
-                <label style="font-size: 13px;">Password:</label>
-                <input type="password" id="password" class="search-box" style="width: 100%; margin-top: 2px;" required>
+                <label>Password:</label>
+                <input type="password" id="password" class="search-box" style="width: 100%; margin: 2px 0 0 0;" required>
             </div>
             <div style="margin: 0; display: flex; align-items: flex-end;">
-                <label style="font-size: 13px; display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
+                <label style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer;">
                     <input type="checkbox" id="is_admin">
                     <span>Admin user</span>
                 </label>
@@ -45,7 +45,7 @@ if (!token) {
         </div>
         <div style="margin-top: 0.5rem;">
             <button type="submit" class="btn">Create User</button>
-            <span id="create-result" style="margin-left: 1rem; font-size: 13px;"></span>
+            <span id="create-result" class="text-muted" style="margin-left: 1rem;"></span>
         </div>
     </form>
 </div>
@@ -53,13 +53,19 @@ if (!token) {
 <div class="card">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
         <input type="text" class="search-box" placeholder="Search users..." id="search" style="margin: 0; flex: 1; margin-right: 1rem;">
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <button class="btn" onclick="downloadTemplate()">Download CSV Template</button>
+            <input type="file" id="csv-file" accept=".csv" class="search-box" style="width: auto;">
+            <button class="btn" onclick="importCSV()" id="import-csv-btn">Import CSV</button>
+        </div>
     </div>
     
     {% if users %}
     <table>
         <thead>
             <tr>
-                <th>Name</th>
+                <th>First Name</th>
+                <th>Last Name</th>
                 <th>Username</th>
                 <th>Email</th>
                 <th>Admin</th>
@@ -72,7 +78,8 @@ if (!token) {
         <tbody>
             {% for user in users %}
             <tr data-user-id="{{ user.id }}">
-                <td>{{ user.first_name or '' }} {{ user.last_name or '' }}</td>
+                <td>{{ user.first_name or '' }}</td>
+                <td>{{ user.last_name or '' }}</td>
                 <td>{{ user.username }}</td>
                 <td>{{ user.email }}</td>
                 <td>{% if user.is_admin %}Yes{% else %}No{% endif %}</td>
@@ -282,5 +289,72 @@ document.getElementById('search').addEventListener('input', (e) => {
         row.style.display = text.includes(term) ? '' : 'none';
     });
 });
+
+async function downloadTemplate() {
+    try {
+        const response = await fetch('/api/users/import-template', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (response.ok) {
+            const blob = await response.blob();
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'fontdock_users_template.csv';
+            a.click();
+            URL.revokeObjectURL(a.href);
+        } else if (response.status === 401) {
+            location.href = '/ui/login';
+        } else {
+            alert('Download failed');
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+async function importCSV() {
+    const fileInput = document.getElementById('csv-file');
+    if (!fileInput.files.length) {
+        alert('Select a CSV file first.\n\nRequired columns: username, email, password\nOptional: first_name, last_name, is_admin, can_create_users, can_delete_users, can_upload_fonts, can_download_fonts, can_delete_fonts, can_create_collections, can_create_clients (true/false)\n\nDownload the template for the correct format.');
+        return;
+    }
+    
+    if (!confirm('Import users from CSV? This will create accounts immediately.')) return;
+    
+    const btn = document.getElementById('import-csv-btn');
+    btn.disabled = true;
+    btn.textContent = 'Importing...';
+    
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    
+    try {
+        const response = await fetch('/api/users/import-csv', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token },
+            body: formData
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            let msg = `Imported: ${data.imported} succeeded, ${data.failed} failed`;
+            if (data.errors && data.errors.length > 0) {
+                msg += '\n\nErrors:\n' + data.errors.join('\n');
+            }
+            alert(msg);
+            if (data.imported > 0) location.reload();
+        } else if (response.status === 401) {
+            location.href = '/ui/login';
+        } else {
+            const data = await response.json();
+            alert('Import failed: ' + (data.detail || 'Unknown error'));
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Import CSV';
+    }
+}
 </script>
 {% endblock %}

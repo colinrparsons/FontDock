@@ -95,7 +95,7 @@ This keeps the project realistic, testable, and useful at every stage.
 
 ## Status
 
-**Version 1.1.0** - Fully functional MVP with trust signals and offline mode!
+**Version 1.2.0** - Full backup/restore, bulk user import, and UI consistency!
 
 ### ✅ Completed Features
 
@@ -130,15 +130,33 @@ This keeps the project realistic, testable, and useful at every stage.
 - ✅ **Filter Fixes** — "Activated Only" and "Recently Used" filters now work correctly with collapsed families; collection filter combo refreshes after sync
 - ✅ **Cache Count Fix** — Fixed `INSERT OR REPLACE` wiping cached state on sync; cache count now persists correctly across syncs
 
+### 🆕 v1.2 Features — Backup/Restore, Bulk Import & UI Consistency
+
+- ✅ **Full Backup & Restore** — ZIP archives containing database + all font files; download, upload, and restore for server migration
+- ✅ **Configurable Scheduled Backups** — Daily, weekly (default), monthly, or never; only 2 most recent backups retained
+- ✅ **Bulk User Import via CSV** — Upload CSV with first_name, last_name, username, email, password, and all permissions; downloadable template with examples
+- ✅ **Granular Permissions UI** — Dedicated permissions page with per-user checkboxes for all 8 permission flags
+- ✅ **First Name / Last Name** — User records now include first and last name fields; displayed in Users and Permissions tables
+- ✅ **Server Log Viewer** — Web UI to view, download, and clear server logs with auto-refresh
+- ✅ **UI Font Size Consistency** — Standardized 13px/12px typography across all pages; consistent input, button, and label sizing
+- ✅ **Batch Font Import** — Import fonts from server folder or ZIP file with automatic client creation and duplicate detection
+
 ### 🚀 Quick Start
 
-#### Server Setup
+#### Server Setup (Development)
 ```bash
 cd fontdock
 pip install -r requirements.txt
-python run.py
+./start_server.sh
 ```
-Server runs at `http://localhost:8000`
+Server runs at `http://localhost:9998`
+
+#### Server Setup (Production / LXC)
+```bash
+cd fontdock
+sudo ./install.sh
+```
+Installs to `/opt/fontdock` with systemd service and Nginx reverse proxy.
 
 #### macOS Client Setup
 ```bash

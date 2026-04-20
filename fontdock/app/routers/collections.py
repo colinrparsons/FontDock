@@ -2,7 +2,7 @@
 import logging
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -197,7 +197,7 @@ async def update_collection(
 @router.post("/{collection_id}/fonts")
 async def add_font_to_collection(
     collection_id: int,
-    font_id: int = Form(...),
+    font_id: int = Query(...),
     current_user: User = Depends(check_collection_permission),
     db: Session = Depends(get_db),
 ):

@@ -43,6 +43,9 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     logger.info(f"Template dir: {template_dir}, exists: {template_dir.exists()}")
     Base.metadata.create_all(bind=engine)
+    # Start automatic backup scheduler
+    from app.routers.admin import start_backup_scheduler
+    start_backup_scheduler()
     yield
 
 
@@ -333,6 +336,17 @@ def create_app() -> FastAPI:
             return HTMLResponse(content=html)
         except Exception as e:
             logger.error(f"Logs page error: {e}", exc_info=True)
+            return HTMLResponse(content=f"<h1>Error: {e}</h1><pre>{traceback.format_exc()}</pre>", status_code=500)
+    
+    @app.get("/ui/backup", response_class=HTMLResponse)
+    async def backup_page(
+        request: Request,
+    ):
+        try:
+            html = render_template("backup.html", request=request)
+            return HTMLResponse(content=html)
+        except Exception as e:
+            logger.error(f"Backup page error: {e}", exc_info=True)
             return HTMLResponse(content=f"<h1>Error: {e}</h1><pre>{traceback.format_exc()}</pre>", status_code=500)
     
     return app
