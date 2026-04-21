@@ -21,7 +21,7 @@ from app.schemas import (
 )
 from app.models import User, Font as FontModel, Collection
 from app.routers.auth import get_current_user, get_current_admin
-from app.services.font_ingest_service import ingest_font
+from app.services.font_ingest_service import ingest_font, normalize_family_name
 from app.services.font_search_service import search_fonts
 from app.services.auth_service import decode_token, get_user_by_username
 from app.config import get_settings
@@ -710,3 +710,23 @@ async def remove_font_from_client(
     
     logger.info(f"[AUDIT] Font removed from client: font_id={font_id}, old_client_id={old_client_id}, user='{current_user.username}'")
     return {"success": True, "message": "Font removed from client"}
+
+@router.post("/normalize-family-names")
+async def normalize_all_family_names(
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Normalize all ALL CAPS family names to title case."""
+    from app.models import FontFamily as FontFamilyModel
+    
+    families = db.query(FontFamilyModel).all()
+    updated = 0
+    for family in families:
+        normalized = normalize_family_name(family.name)
+        if normalized != family.name:
+            logger.info(f"Normalizing family: '{family.name}' -> '{normalized}'")
+            family.name = normalized
+            updated += 1
+    
+    db.commit()
+    return {"success": True, "updated": updated, "total": len(families)}

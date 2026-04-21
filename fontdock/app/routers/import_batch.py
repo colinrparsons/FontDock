@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.routers.auth import get_current_admin
 from app.models import User, Font as FontModel, FontFamily, Client
-from app.services.font_ingest_service import extract_font_metadata
+from app.services.font_ingest_service import extract_font_metadata, normalize_family_name
 
 router = APIRouter(prefix="/api/import", tags=["import"])
 logger = logging.getLogger(__name__)
@@ -165,10 +165,13 @@ async def batch_import_from_folder(
                 if not metadata.get('typographic_family') and not metadata.get('family_name'):
                     logger.warning(f"Font {font_info['filename']} has no family metadata in name tables, using: {family_name}")
                 
-                family = db.query(FontFamily).filter(FontFamily.name == family_name).first()
+                normalized = family_name.lower().replace(" ", "_") if family_name else None
+                family = db.query(FontFamily).filter(FontFamily.normalized_name == normalized).first()
                 if not family:
+                    display_name = normalize_family_name(family_name)
                     family = FontFamily(
-                        name=family_name,
+                        name=display_name,
+                        normalized_name=normalized,
                         foundry=metadata.get('manufacturer'),
                         notes=metadata.get('description')
                     )

@@ -93,6 +93,16 @@ def extract_font_metadata(file_path: Path) -> Dict[str, Any]:
     return metadata
 
 
+def normalize_family_name(name: str) -> str:
+    """Normalize family name to title case."""
+    if not name:
+        return "Unknown"
+    # Title case the name, but preserve mixed-case names that aren't ALL CAPS
+    if name.isupper():
+        return name.title()
+    return name
+
+
 def get_or_create_family(db: Session, family_name: str, foundry: Optional[str] = None) -> FontFamily:
     """Get existing family or create new one."""
     # Normalize family name for lookup
@@ -103,8 +113,9 @@ def get_or_create_family(db: Session, family_name: str, foundry: Optional[str] =
     ).first()
     
     if not family:
+        display_name = normalize_family_name(family_name)
         family = FontFamily(
-            name=family_name or "Unknown",
+            name=display_name,
             normalized_name=normalized,
             foundry=foundry,
         )
