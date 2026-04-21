@@ -3030,27 +3030,16 @@ class MainWindow(QMainWindow):
             self.show_indesign_font_dialog(doc_name, matched_fonts, unmatched_fonts, all_fonts)
     
     def find_font_matches(self, font_name):
-        """Find fonts in the database that match the given name."""
-        conn = self.db.get_connection()
-        cursor = conn.cursor()
-        
-        # Try exact PostScript name match (case-insensitive)
-        cursor.execute(
-            "SELECT id, postscript_name, family_name, style_name FROM fonts WHERE postscript_name COLLATE NOCASE = ?",
-            (font_name,)
+        """Find fonts in the database using smart multi-field matching.
+        Returns list of (id, postscript_name, family_name, style_name) tuples."""
+        # Use smart matching - tries PostScript, family+style, full_name, family, fuzzy
+        results = self.db.smart_match_font(
+            postscript_name=font_name,
+            family=font_name
         )
-        results = cursor.fetchall()
         
-        if not results:
-            # Try family name match
-            cursor.execute(
-                "SELECT id, postscript_name, family_name, style_name FROM fonts WHERE family_name COLLATE NOCASE LIKE ?",
-                (f"%{font_name}%",)
-            )
-            results = cursor.fetchall()
-        
-        conn.close()
-        return results
+        # Convert dicts to tuples for backward compatibility
+        return [(f['id'], f['postscript_name'], f['family_name'], f['style_name']) for f in results]
     
     def show_indesign_font_dialog(self, doc_name, matched_fonts, unmatched_fonts, all_fonts):
         """Show dialog with InDesign font request results."""

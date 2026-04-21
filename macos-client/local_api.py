@@ -145,40 +145,51 @@ class AdobeBridgeHandler(BaseHTTPRequestHandler):
             self.end_headers()
     
     def activate_font_by_family_style(self, family_name, style_name):
-        """Activate the entire font family when any member is missing.
-        InDesign may only report some styles as missing, but activating
-        the whole family ensures all weights are available."""
+        """Activate fonts using smart multi-field matching.
+        InDesign reports family+style; we try PostScript name, family+style,
+        full_name, family match, and fuzzy fallback in priority order."""
         if not self.font_manager:
             raise RuntimeError("Font manager not initialized")
         
         import logging
         logger = logging.getLogger(__name__)
         
-        logger.info(f"Activating family '{family_name}' (triggered by style '{style_name}')")
+        logger.info(f"Smart matching family='{family_name}' style='{style_name}'")
         
-        # Try exact family match first
-        family_fonts = self.font_manager.db.get_fonts_by_family(family_name)
-        logger.info(f"  Family lookup returned {len(family_fonts)} fonts")
+        # Use smart matching - tries PostScript, family+style, full_name, family, fuzzy
+        matched_fonts = self.font_manager.db.smart_match_font(
+            family=family_name,
+            style=style_name
+        )
+        logger.info(f"  Smart match returned {len(matched_fonts)} fonts")
         
-        if not family_fonts:
-            # Fallback: fuzzy search to find the family name in the DB
-            logger.info(f"  Falling back to fuzzy search for family: '{family_name}'")
-            all_matches = self.font_manager.db.search_fonts(family_name)
-            if all_matches:
-                # Get unique family names from results
-                families = set(f.get('family_name', '') for f in all_matches)
-                # Use the first matching family
-                best_family = families.pop() if families else ''
-                if best_family:
-                    family_fonts = self.font_manager.db.get_fonts_by_family(best_family)
-                    logger.info(f"  Fuzzy match found family '{best_family}' with {len(family_fonts)} fonts")
+        if not matched_fonts:
+            raise ValueError(f"Font family '{family_name}' style '{style_name}' not found")
         
-        if not family_fonts:
-            raise ValueError(f"Font family '{family_name}' not found")
+        # If only one specific style matched (not the whole family), activate just that
+        # If the whole family matched, activate all members
+        # Determine if we got a family-wide match vs a specific style match
+        specific_matches = [f for f in matched_fonts 
+                           if f.get('style_name', '').lower() == style_name.lower()]
         
-        # Activate all fonts in the family
+        # If we matched the whole family (strategy 4/5), activate all members
+        # If we matched a specific font (strategy 1/2/3), just activate that one
+        if specific_matches and len(matched_fonts) > len(specific_matches):
+            # Family-wide match - activate all
+            fonts_to_activate = matched_fonts
+            logger.info(f"  Family-wide match: activating all {len(fonts_to_activate)} fonts")
+        elif specific_matches:
+            # Specific style match - activate just the requested style
+            fonts_to_activate = specific_matches
+            logger.info(f"  Specific style match: activating {len(fonts_to_activate)} font(s)")
+        else:
+            # No exact style match but found family - activate all
+            fonts_to_activate = matched_fonts
+            logger.info(f"  Family match (no exact style): activating all {len(fonts_to_activate)} fonts")
+        
+        # Activate fonts
         results = []
-        for font in family_fonts:
+        for font in fonts_to_activate:
             try:
                 result = self.font_manager.activate_font(font['id'])
                 logger.info(f"  Activated: {font['postscript_name']} - success={result.get('success', False)}")
@@ -187,8 +198,8 @@ class AdobeBridgeHandler(BaseHTTPRequestHandler):
                 logger.warning(f"  Failed to activate {font['postscript_name']}: {e}")
         
         success_count = sum(1 for r in results if r.get('success', False))
-        logger.info(f"  Family activation complete: {success_count}/{len(family_fonts)} fonts activated")
-        return {'success': success_count > 0, 'family': family_name, 'activated': success_count, 'total': len(family_fonts)}
+        logger.info(f"  Activation complete: {success_count}/{len(fonts_to_activate)} fonts activated")
+        return {'success': success_count > 0, 'family': family_name, 'activated': success_count, 'total': len(fonts_to_activate)}
     
     def activate_font_by_name(self, font_name):
         if not self.font_manager:
@@ -402,35 +413,44 @@ class RequestFileWatcher:
             threading.Event().wait(self.POLL_INTERVAL)
     
     def _activate_font_by_family_style(self, family, style):
-        """Activate the entire font family when any member is missing.
-        InDesign may only report some styles as missing, but activating
-        the whole family ensures all weights are available."""
+        """Activate fonts using smart multi-field matching.
+        InDesign reports family+style; we try PostScript name, family+style,
+        full_name, family match, and fuzzy fallback in priority order."""
         import logging
         logger = logging.getLogger(__name__)
         
-        logger.info(f"Activating family '{family}' (triggered by style '{style}')")
+        logger.info(f"Smart matching family='{family}' style='{style}'")
         
-        # Try exact family match first
-        family_fonts = self.font_manager.db.get_fonts_by_family(family)
-        logger.info(f"  Family lookup returned {len(family_fonts)} fonts")
+        # Use smart matching - tries PostScript, family+style, full_name, family, fuzzy
+        matched_fonts = self.font_manager.db.smart_match_font(
+            family=family,
+            style=style
+        )
+        logger.info(f"  Smart match returned {len(matched_fonts)} fonts")
         
-        if not family_fonts:
-            # Fallback: fuzzy search to find the family name in the DB
-            logger.info(f"  Falling back to fuzzy search for family: '{family}'")
-            all_matches = self.font_manager.db.search_fonts(family)
-            if all_matches:
-                families = set(f.get('family_name', '') for f in all_matches)
-                best_family = families.pop() if families else ''
-                if best_family:
-                    family_fonts = self.font_manager.db.get_fonts_by_family(best_family)
-                    logger.info(f"  Fuzzy match found family '{best_family}' with {len(family_fonts)} fonts")
+        if not matched_fonts:
+            raise ValueError(f"Font family '{family}' style '{style}' not found")
         
-        if not family_fonts:
-            raise ValueError(f"Font family '{family}' not found")
+        # Determine if we got a family-wide match vs a specific style match
+        specific_matches = [f for f in matched_fonts 
+                           if f.get('style_name', '').lower() == style.lower()]
         
-        # Activate all fonts in the family
+        if specific_matches and len(matched_fonts) > len(specific_matches):
+            # Family-wide match - activate all
+            fonts_to_activate = matched_fonts
+            logger.info(f"  Family-wide match: activating all {len(fonts_to_activate)} fonts")
+        elif specific_matches:
+            # Specific style match - activate just the requested style
+            fonts_to_activate = specific_matches
+            logger.info(f"  Specific style match: activating {len(fonts_to_activate)} font(s)")
+        else:
+            # No exact style match but found family - activate all
+            fonts_to_activate = matched_fonts
+            logger.info(f"  Family match (no exact style): activating all {len(fonts_to_activate)} fonts")
+        
+        # Activate fonts
         results = []
-        for font in family_fonts:
+        for font in fonts_to_activate:
             try:
                 result = self.font_manager.activate_font(font['id'])
                 logger.info(f"  Activated: {font['postscript_name']} - success={result.get('success', False)}")
@@ -439,8 +459,8 @@ class RequestFileWatcher:
                 logger.warning(f"  Failed to activate {font['postscript_name']}: {e}")
         
         success_count = sum(1 for r in results if r.get('success', False))
-        logger.info(f"  Family activation complete: {success_count}/{len(family_fonts)} fonts activated")
-        return {'success': success_count > 0, 'family': family, 'activated': success_count, 'total': len(family_fonts)}
+        logger.info(f"  Activation complete: {success_count}/{len(fonts_to_activate)} fonts activated")
+        return {'success': success_count > 0, 'family': family, 'activated': success_count, 'total': len(fonts_to_activate)}
     
     def _activate_font(self, font_name):
         """Activate a font using font_manager directly.

@@ -242,6 +242,111 @@ class LocalDatabase:
         conn.close()
         return results
     
+    def smart_match_font(self, family=None, style=None, postscript_name=None, full_name=None):
+        """Smart font matching inspired by Extensis Font Sense.
+        
+        Tries multiple matching strategies in priority order:
+        1. Exact PostScript name match (most reliable - unique per font)
+        2. Family + Style exact match (case-insensitive)
+        3. Full name match (case-insensitive)
+        4. Family match (case-insensitive) - returns all family members
+        5. Fuzzy search fallback
+        
+        Returns list of matching font dicts, or empty list.
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        def fetch_results(cursor):
+            columns = [desc[0] for desc in cursor.description]
+            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+        # Strategy 1: Exact PostScript name match
+        if postscript_name:
+            cursor.execute("""
+                SELECT * FROM fonts 
+                WHERE postscript_name COLLATE NOCASE = ?
+            """, (postscript_name,))
+            results = fetch_results(cursor)
+            if results:
+                conn.close()
+                return results
+        
+        # Strategy 2: Family + Style exact match
+        if family and style:
+            cursor.execute("""
+                SELECT * FROM fonts 
+                WHERE family_name COLLATE NOCASE = ? AND style_name COLLATE NOCASE = ?
+            """, (family, style))
+            results = fetch_results(cursor)
+            if results:
+                conn.close()
+                return results
+            
+            # Try constructing PostScript name from family+style
+            # e.g. family="KFC", style="Regular" -> "KFC-Regular"
+            ps_constructed = family.replace(" ", "") + "-" + style.replace(" ", "")
+            cursor.execute("""
+                SELECT * FROM fonts 
+                WHERE postscript_name COLLATE NOCASE = ?
+            """, (ps_constructed,))
+            results = fetch_results(cursor)
+            if results:
+                conn.close()
+                return results
+        
+        # Strategy 3: Full name match
+        if full_name:
+            cursor.execute("""
+                SELECT * FROM fonts 
+                WHERE full_name COLLATE NOCASE = ?
+            """, (full_name,))
+            results = fetch_results(cursor)
+            if results:
+                conn.close()
+                return results
+        
+        # Also try "family style" as full_name
+        if family and style and not full_name:
+            combined = f"{family} {style}"
+            cursor.execute("""
+                SELECT * FROM fonts 
+                WHERE full_name COLLATE NOCASE = ?
+            """, (combined,))
+            results = fetch_results(cursor)
+            if results:
+                conn.close()
+                return results
+        
+        # Strategy 4: Family name match (return all members)
+        if family:
+            cursor.execute("""
+                SELECT * FROM fonts 
+                WHERE family_name COLLATE NOCASE = ?
+                ORDER BY style_name
+            """, (family,))
+            results = fetch_results(cursor)
+            if results:
+                conn.close()
+                return results
+        
+        # Strategy 5: Fuzzy search on family name
+        if family:
+            cursor.execute("""
+                SELECT * FROM fonts 
+                WHERE postscript_name COLLATE NOCASE LIKE ?
+                   OR full_name COLLATE NOCASE LIKE ?
+                   OR family_name COLLATE NOCASE LIKE ?
+                ORDER BY family_name, postscript_name
+            """, (f"%{family}%", f"%{family}%", f"%{family}%"))
+            results = fetch_results(cursor)
+            if results:
+                conn.close()
+                return results
+        
+        conn.close()
+        return []
+    
     def search_font_by_family_and_style(self, family_name, style_name):
         """Search for font by exact family and style name match (case-insensitive)"""
         conn = self.get_connection()
