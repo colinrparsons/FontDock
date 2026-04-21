@@ -85,7 +85,7 @@ async def list_fonts(
     collection_id: Optional[int] = Query(None),
     client_id: Optional[int] = Query(None),
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=1000),
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):

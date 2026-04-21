@@ -93,12 +93,12 @@ class FontDockAPI:
                 logger.error(f"Response content: {e.response.text}")
             raise
     
-    def get_fonts(self, page_size=1000):
-        logger.info(f"Fetching fonts (page_size={page_size})")
+    def get_fonts(self, limit=1000):
+        logger.info(f"Fetching fonts (limit={limit})")
         try:
             response = requests.get(
                 f"{self.server_url}/api/fonts",
-                params={"page_size": page_size},
+                params={"limit": limit},
                 headers=self.get_headers()
             )
             logger.debug(f"Response status: {response.status_code}")

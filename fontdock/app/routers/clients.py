@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 async def list_clients(
     is_active: Optional[bool] = Query(True),
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=1000),
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):

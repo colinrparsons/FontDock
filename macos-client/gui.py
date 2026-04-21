@@ -265,7 +265,7 @@ class SettingsDialog(QDialog):
             try:
                 font_response = requests.get(
                     f"{server_url}/api/fonts",
-                    params={"page_size": 1},
+                    params={"limit": 1},
                     timeout=5
                 )
                 if font_response.status_code == 200:
@@ -451,7 +451,7 @@ class LoginDialog(QDialog):
                 try:
                     font_response = requests.get(
                         f"{server_url}/api/fonts",
-                        params={"page_size": 1},
+                        params={"limit": 1},
                         timeout=5
                     )
                     if font_response.status_code == 200:
@@ -2408,7 +2408,7 @@ class MainWindow(QMainWindow):
             # Fetch fonts from the client_fonts association table
             response = requests.get(
                 f"{self.api.server_url}/api/fonts",
-                params={"page_size": 1000},
+                params={"limit": 1000},
                 headers=self.api.get_headers()
             )
             response.raise_for_status()
