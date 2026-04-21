@@ -243,13 +243,13 @@ class LocalDatabase:
         return results
     
     def search_font_by_family_and_style(self, family_name, style_name):
-        """Search for font by exact family and style name match"""
+        """Search for font by exact family and style name match (case-insensitive)"""
         conn = self.get_connection()
         cursor = conn.cursor()
         
         cursor.execute("""
             SELECT * FROM fonts 
-            WHERE family_name = ? AND style_name = ?
+            WHERE family_name COLLATE NOCASE = ? AND style_name COLLATE NOCASE = ?
         """, (family_name, style_name))
         
         columns = [desc[0] for desc in cursor.description]
@@ -259,13 +259,13 @@ class LocalDatabase:
         return results
     
     def get_fonts_by_family(self, family_name):
-        """Get all fonts belonging to a family"""
+        """Get all fonts belonging to a family (case-insensitive)"""
         conn = self.get_connection()
         cursor = conn.cursor()
         
         cursor.execute("""
             SELECT * FROM fonts 
-            WHERE family_name = ?
+            WHERE family_name COLLATE NOCASE = ?
             ORDER BY style_name
         """, (family_name,))
         

@@ -3034,9 +3034,9 @@ class MainWindow(QMainWindow):
         conn = self.db.get_connection()
         cursor = conn.cursor()
         
-        # Try exact PostScript name match
+        # Try exact PostScript name match (case-insensitive)
         cursor.execute(
-            "SELECT id, ps_name, family_name, style_name FROM fonts WHERE ps_name = ?",
+            "SELECT id, postscript_name, family_name, style_name FROM fonts WHERE postscript_name COLLATE NOCASE = ?",
             (font_name,)
         )
         results = cursor.fetchall()
@@ -3044,7 +3044,7 @@ class MainWindow(QMainWindow):
         if not results:
             # Try family name match
             cursor.execute(
-                "SELECT id, ps_name, family_name, style_name FROM fonts WHERE family_name LIKE ?",
+                "SELECT id, postscript_name, family_name, style_name FROM fonts WHERE family_name COLLATE NOCASE LIKE ?",
                 (f"%{font_name}%",)
             )
             results = cursor.fetchall()
