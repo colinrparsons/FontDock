@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 async def list_clients(
     is_active: Optional[bool] = Query(True),
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=1000),
+    limit: int = Query(None, ge=1),
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -35,7 +35,10 @@ async def list_clients(
         query = query.filter(ClientModel.is_active == is_active)
     
     total = query.count()
-    clients = query.offset(skip).limit(limit).all()
+    q = query.offset(skip)
+    if limit is not None:
+        q = q.limit(limit)
+    clients = q.all()
     
     return ClientList(items=clients, total=total)
 

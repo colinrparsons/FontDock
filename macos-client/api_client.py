@@ -55,12 +55,15 @@ class FontDockAPI:
         response.raise_for_status()
         return response.json()
     
-    def get_clients(self, page_size=100):
-        logger.info(f"Fetching clients (page_size={page_size})")
+    def get_clients(self, limit=None):
+        logger.info(f"Fetching clients (limit={limit})")
         try:
+            params = {"is_active": None}
+            if limit is not None:
+                params["limit"] = limit
             response = requests.get(
                 f"{self.server_url}/api/clients",
-                params={"limit": page_size, "is_active": None},
+                params=params,
                 headers=self.get_headers()
             )
             logger.debug(f"Response status: {response.status_code}")
@@ -74,12 +77,15 @@ class FontDockAPI:
                 logger.error(f"Response content: {e.response.text}")
             raise
     
-    def get_collections(self, page_size=100):
-        logger.info(f"Fetching collections (page_size={page_size})")
+    def get_collections(self, limit=None):
+        logger.info(f"Fetching collections (limit={limit})")
         try:
+            params = {}
+            if limit is not None:
+                params["limit"] = limit
             response = requests.get(
                 f"{self.server_url}/api/collections",
-                params={"limit": page_size},
+                params=params,
                 headers=self.get_headers()
             )
             logger.debug(f"Response status: {response.status_code}")
@@ -93,12 +99,15 @@ class FontDockAPI:
                 logger.error(f"Response content: {e.response.text}")
             raise
     
-    def get_fonts(self, limit=1000):
+    def get_fonts(self, limit=None):
         logger.info(f"Fetching fonts (limit={limit})")
         try:
+            params = {}
+            if limit is not None:
+                params["limit"] = limit
             response = requests.get(
                 f"{self.server_url}/api/fonts",
-                params={"limit": limit},
+                params=params,
                 headers=self.get_headers()
             )
             logger.debug(f"Response status: {response.status_code}")

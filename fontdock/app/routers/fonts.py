@@ -85,7 +85,7 @@ async def list_fonts(
     collection_id: Optional[int] = Query(None),
     client_id: Optional[int] = Query(None),
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=1000),
+    limit: int = Query(None, ge=1),
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -112,7 +112,10 @@ async def list_fonts(
         )
     
     total = query.count()
-    fonts = query.offset(skip).limit(limit).all()
+    q = query.offset(skip)
+    if limit is not None:
+        q = q.limit(limit)
+    fonts = q.all()
     
     # Build response with family_name and client_ids populated
     font_responses = []

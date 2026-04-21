@@ -36,7 +36,7 @@ async def check_collection_permission(
 async def list_collections(
     client_id: Optional[int] = Query(None),
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=1000),
+    limit: int = Query(None, ge=1),
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -51,7 +51,10 @@ async def list_collections(
     query = query.filter(CollectionModel.is_active == True)
     
     total = query.count()
-    collections = query.offset(skip).limit(limit).all()
+    q = query.offset(skip)
+    if limit is not None:
+        q = q.limit(limit)
+    collections = q.all()
     
     return CollectionList(items=collections, total=total)
 
