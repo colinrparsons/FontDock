@@ -95,7 +95,7 @@ This keeps the project realistic, testable, and useful at every stage.
 
 ## Status
 
-**Version 1.3.0** - Font Sense-style smart matching, unlimited sync, family name normalization!
+**Version 1.4.0** - Dynamic permissions, license management, and UI improvements
 
 ### ✅ Completed Features
 
@@ -149,6 +149,18 @@ This keeps the project realistic, testable, and useful at every stage.
 - ✅ **Family Name Normalization** — Server normalizes ALL CAPS family names to title case on ingest; admin endpoint to fix existing records
 - ✅ **Offline Mode** — Login dialog includes "Work Offline" button; client loads local DB and works without server connection
 - ✅ **Constructed PostScript Matching** — InDesign sends `family+style`, client constructs PostScript name (e.g. `KFC` + `Regular` → `KFC-Regular`) for matching
+
+### 🆕 v1.4 Features — Dynamic Permissions, License Management & UI Fixes
+
+- ✅ **Dynamic Navigation Permissions** — Nav links hidden/shown based on user permissions (Collections, Clients, Upload, Import, Users, Permissions, Logs, Backup); admin-only items hidden for non-admins
+- ✅ **Cookie-Based UI Auth** — Login sets HTTP-only cookie for browser page navigation; UI routes no longer return 401 for logged-in users
+- ✅ **Server-Side Permission Enforcement** — All UI routes and API endpoints check user permissions; 403 returned for unauthorized access; admin bypasses all checks
+- ✅ **Auto-Grant Admin Permissions** — Setting a user as admin automatically grants all `can_*` permissions; existing admins updated
+- ✅ **Permission-Aware Font Visibility** — Users with `can_create_collections` see fonts in all collections; users with `can_create_clients` see fonts in all clients; combined with group-based access via UNION queries
+- ✅ **Client Permission Sync** — macOS client fetches user permissions via `/auth/me` and skips collections/clients sync if user lacks permission; clears local data for denied items
+- ✅ **License Management UI** — Upload, view, edit, and delete license files per font; inline edit for type/seats/notes; license count badge on font cards
+- ✅ **License Modal Fix** — Fixed missing `escapeHtml()` function causing modal to fail for fonts with licenses; stored license data in JS object to avoid fragile inline onclick attributes
+- ✅ **Button Click Fix** — Added `event.preventDefault()` to font action buttons to prevent page scroll to top
 
 ### 🚀 Quick Start
 
