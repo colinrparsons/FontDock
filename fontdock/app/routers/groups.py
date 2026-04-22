@@ -35,7 +35,21 @@ async def list_groups(
     total = query.count()
     groups = query.order_by(GroupModel.name).all()
     
-    return GroupList(items=groups, total=total)
+    # Build response with font/user counts
+    group_items = []
+    for g in groups:
+        group_items.append({
+            "id": g.id,
+            "name": g.name,
+            "description": g.description,
+            "is_active": g.is_active,
+            "created_at": g.created_at,
+            "updated_at": g.updated_at,
+            "font_count": len(g.fonts),
+            "user_count": len(g.users),
+        })
+    
+    return GroupList(items=group_items, total=total)
 
 
 @router.post("", response_model=Group, status_code=status.HTTP_201_CREATED)

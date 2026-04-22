@@ -369,6 +369,8 @@ class Group(GroupBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    font_count: Optional[int] = 0
+    user_count: Optional[int] = 0
 
 
 class GroupWithFonts(Group):

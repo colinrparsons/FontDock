@@ -76,8 +76,8 @@ function renderGroups(groups) {
         <tr>
             <td><strong>${escapeHtml(g.name)}</strong></td>
             <td>${escapeHtml(g.description || '-')}</td>
-            <td>${g.user_ids ? g.user_ids.length : 0}</td>
-            <td>${g.font_ids ? g.font_ids.length : 0}</td>
+            <td>${g.user_count || 0}</td>
+            <td>${g.font_count || 0}</td>
             <td>
                 <span style="color: ${g.is_active ? 'green' : 'red'};">
                     ${g.is_active ? 'Active' : 'Inactive'}
