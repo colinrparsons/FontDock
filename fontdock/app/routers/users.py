@@ -197,6 +197,28 @@ async def create_new_user(
             detail=f"Email '{data.email}' already exists",
         )
     
+    # Auto-grant all permissions for admin users
+    if data.is_admin:
+        perms = {
+            'can_create_users': True,
+            'can_delete_users': True,
+            'can_upload_fonts': True,
+            'can_download_fonts': True,
+            'can_delete_fonts': True,
+            'can_create_collections': True,
+            'can_create_clients': True,
+        }
+    else:
+        perms = {
+            'can_create_users': data.can_create_users,
+            'can_delete_users': data.can_delete_users,
+            'can_upload_fonts': data.can_upload_fonts,
+            'can_download_fonts': data.can_download_fonts,
+            'can_delete_fonts': data.can_delete_fonts,
+            'can_create_collections': data.can_create_collections,
+            'can_create_clients': data.can_create_clients,
+        }
+    
     new_user = create_user(
         db,
         username=data.username,
@@ -205,13 +227,7 @@ async def create_new_user(
         first_name=data.first_name,
         last_name=data.last_name,
         is_admin=data.is_admin,
-        can_create_users=data.can_create_users,
-        can_delete_users=data.can_delete_users,
-        can_upload_fonts=data.can_upload_fonts,
-        can_download_fonts=data.can_download_fonts,
-        can_delete_fonts=data.can_delete_fonts,
-        can_create_collections=data.can_create_collections,
-        can_create_clients=data.can_create_clients,
+        **perms,
     )
     
     # Assign user to groups if specified
@@ -252,6 +268,15 @@ async def update_user(
         user.last_name = data.last_name
     if data.is_admin is not None:
         user.is_admin = data.is_admin
+        # Auto-grant all permissions when setting user as admin
+        if data.is_admin:
+            user.can_create_users = True
+            user.can_delete_users = True
+            user.can_upload_fonts = True
+            user.can_download_fonts = True
+            user.can_delete_fonts = True
+            user.can_create_collections = True
+            user.can_create_clients = True
     if data.is_active is not None:
         user.is_active = data.is_active
     if data.can_create_users is not None:
