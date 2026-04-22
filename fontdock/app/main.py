@@ -143,12 +143,13 @@ def create_app() -> FastAPI:
         db: Session = Depends(get_db),
     ):
         try:
-            from app.models import Font, FontFamily
-            # Get all families with their fonts, filter out empty families
+            from app.models import Font, FontFamily, FontLicense
+            from sqlalchemy.orm import joinedload
+            # Get all families with their fonts (including licenses), filter out empty families
             families = db.query(FontFamily).all()
             families_with_fonts = []
             for family in families:
-                family.fonts = db.query(Font).filter(Font.family_id == family.id).all()
+                family.fonts = db.query(Font).filter(Font.family_id == family.id).options(joinedload(Font.licenses)).all()
                 if family.fonts:  # Only include families that have fonts
                     families_with_fonts.append(family)
             html = render_template("fonts.html", request=request, families=families_with_fonts)

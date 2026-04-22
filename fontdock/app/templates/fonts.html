@@ -46,13 +46,18 @@ if (!token) {
                     </div>
                     <div class="style-info">
                         <span class="style-name">{{ font.style_name or 'Regular' }}</span>
+                        {% if font.licenses and font.licenses|length > 0 %}
+                        <span class="license-badge" title="{{ font.licenses|length }} license file(s) attached">{{ font.licenses|length }} 📄</span>
+                        {% else %}
+                        <span class="license-badge license-badge-none" title="No license files">—</span>
+                        {% endif %}
                         <span class="style-format">
                             {% if font.extension %}
                                 {% if font.extension in ['.ttf', '.ttc'] %}TrueType{% elif font.extension == '.otf' %}OpenType{% else %}{{ font.extension | upper }}{% endif %}
                             {% else %}-{% endif %}
                         </span>
                         <a href="#" class="btn" onclick="event.stopPropagation(); downloadFont('{{ font.id }}');">Download</a>
-                        <a href="#" class="btn" style="background: #6366f1;" onclick="event.stopPropagation(); manageLicense('{{ font.id }}');">License</a>
+                        <a href="#" class="btn" style="background: #6366f1;" onclick="event.stopPropagation(); manageLicense('{{ font.id }}');">License{% if font.licenses and font.licenses|length > 0 %} ({{ font.licenses|length }}){% endif %}</a>
                         <a href="#" class="btn" style="background: #dc3545;" onclick="event.stopPropagation(); deleteFont('{{ font.id }}');">Delete</a>
                     </div>
                 </div>
@@ -163,6 +168,19 @@ if (!token) {
 }
 .hidden {
     display: none !important;
+}
+.license-badge {
+    background: #e0e7ff;
+    color: #4338ca;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.license-badge-none {
+    background: #f3f4f6;
+    color: #9ca3af;
 }
 </style>
 
