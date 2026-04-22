@@ -392,6 +392,14 @@ document.getElementById('filter-format').addEventListener('change', (e) => {
 });
 
 // License management
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+let currentLicenseData = {};
+
 async function manageLicense(fontId) {
     const response = await fetch(`/api/fonts/${fontId}/licenses`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -438,18 +446,19 @@ async function manageLicense(fontId) {
     } else {
         html += '<table><thead><tr><th>Type</th><th>File</th><th>Seats</th><th>Expiry</th><th>Notes</th><th>Actions</th></tr></thead><tbody>';
         for (const lic of data.items) {
+            currentLicenseData[lic.id] = lic;
             const expiryStr = lic.expiry_date ? new Date(lic.expiry_date).toLocaleDateString() : 'Never';
             const isExpired = lic.expiry_date && new Date(lic.expiry_date) < new Date();
             html += `
                 <tr id="lic-row-${lic.id}">
-                    <td id="lic-type-${lic.id}"><span style="background: #e0e7ff; color: #4338ca; padding: 2px 8px; border-radius: 4px; font-size: 12px;">${lic.license_type || 'N/A'}</span></td>
-                    <td>${lic.filename_original || 'N/A'}</td>
+                    <td id="lic-type-${lic.id}"><span style="background: #e0e7ff; color: #4338ca; padding: 2px 8px; border-radius: 4px; font-size: 12px;">${escapeHtml(lic.license_type || 'N/A')}</span></td>
+                    <td>${escapeHtml(lic.filename_original || 'N/A')}</td>
                     <td id="lic-seats-${lic.id}">${lic.seat_count || 'Unlimited'}</td>
                     <td style="color: ${isExpired ? 'red' : 'green'};">${expiryStr}${isExpired ? ' (expired)' : ''}</td>
                     <td id="lic-notes-${lic.id}" style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(lic.notes || '')}">${escapeHtml(lic.notes || '-')}</td>
                     <td>
                         <a href="/api/fonts/${fontId}/licenses/${lic.id}/download" class="btn" style="font-size: 12px;">Download</a>
-                        <button class="btn" style="background: #f59e0b; font-size: 12px;" onclick="editLicense(${fontId}, ${lic.id}, '${lic.license_type || ''}', ${lic.seat_count || 'null'}, '${lic.expiry_date || ''}', '${escapeHtml(lic.notes || '').replace(/'/g, "\\'")}')">Edit</button>
+                        <button class="btn" style="background: #f59e0b; font-size: 12px;" onclick="editLicense(${fontId}, ${lic.id})">Edit</button>
                         <button class="btn" style="background: #dc3545; font-size: 12px;" onclick="deleteLicense(${fontId}, ${lic.id})">Delete</button>
                     </td>
                 </tr>
@@ -492,7 +501,10 @@ async function deleteLicense(fontId, licenseId) {
     }
 }
 
-function editLicense(fontId, licenseId, currentType, currentSeats, currentExpiry, currentNotes) {
+function editLicense(fontId, licenseId) {
+    const lic = currentLicenseData[licenseId];
+    if (!lic) return;
+    
     const row = document.getElementById(`lic-row-${licenseId}`);
     if (!row) return;
     
@@ -502,15 +514,15 @@ function editLicense(fontId, licenseId, currentType, currentSeats, currentExpiry
     
     // Replace cells with input fields
     typeCell.innerHTML = `<select id="edit-type-${licenseId}" style="font-size: 12px; padding: 2px;">
-        <option value="desktop" ${currentType === 'desktop' ? 'selected' : ''}>Desktop</option>
-        <option value="web" ${currentType === 'web' ? 'selected' : ''}>Web</option>
-        <option value="app" ${currentType === 'app' ? 'selected' : ''}>App</option>
-        <option value="universal" ${currentType === 'universal' ? 'selected' : ''}>Universal</option>
+        <option value="desktop" ${lic.license_type === 'desktop' ? 'selected' : ''}>Desktop</option>
+        <option value="web" ${lic.license_type === 'web' ? 'selected' : ''}>Web</option>
+        <option value="app" ${lic.license_type === 'app' ? 'selected' : ''}>App</option>
+        <option value="universal" ${lic.license_type === 'universal' ? 'selected' : ''}>Universal</option>
     </select>`;
     
-    seatsCell.innerHTML = `<input type="number" id="edit-seats-${licenseId}" value="${currentSeats || ''}" min="1" placeholder="Unlimited" style="width: 70px; font-size: 12px; padding: 2px;">`;
+    seatsCell.innerHTML = `<input type="number" id="edit-seats-${licenseId}" value="${lic.seat_count || ''}" min="1" placeholder="Unlimited" style="width: 70px; font-size: 12px; padding: 2px;">`;
     
-    notesCell.innerHTML = `<input type="text" id="edit-notes-${licenseId}" value="${currentNotes.replace(/"/g, '&quot;')}" placeholder="Notes" style="width: 140px; font-size: 12px; padding: 2px;">`;
+    notesCell.innerHTML = `<input type="text" id="edit-notes-${licenseId}" value="${escapeHtml(lic.notes || '').replace(/"/g, '&quot;')}" placeholder="Notes" style="width: 140px; font-size: 12px; padding: 2px;">`;
     
     // Replace Edit button with Save/Cancel
     const actionsCell = row.querySelector('td:last-child');
