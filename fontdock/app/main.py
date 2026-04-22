@@ -162,8 +162,11 @@ def create_app() -> FastAPI:
     async def upload_page(
         request: Request,
         db: Session = Depends(get_db),
+        current_user: dict = Depends(get_current_user),
     ):
         try:
+            if not current_user.is_admin and not current_user.can_upload_fonts:
+                return HTMLResponse(content="<h1>403 - Access Denied</h1><p>You don't have permission to upload fonts.</p>", status_code=403)
             from app.models import Client, Collection
             clients = db.query(Client).filter(Client.is_active == True).all()
             collections = db.query(Collection).filter(Collection.is_active == True).all()
@@ -189,8 +192,11 @@ def create_app() -> FastAPI:
     @app.get("/ui/import", response_class=HTMLResponse)
     async def import_batch_page(
         request: Request,
+        current_user: dict = Depends(get_current_user),
     ):
         try:
+            if not current_user.is_admin and not current_user.can_upload_fonts:
+                return HTMLResponse(content="<h1>403 - Access Denied</h1><p>You don't have permission to import fonts.</p>", status_code=403)
             html = render_template("import_batch.html", request=request)
             return HTMLResponse(content=html)
         except Exception as e:
@@ -228,8 +234,11 @@ def create_app() -> FastAPI:
     async def collections_page(
         request: Request,
         db: Session = Depends(get_db),
+        current_user: dict = Depends(get_current_user),
     ):
         try:
+            if not current_user.is_admin and not current_user.can_create_collections:
+                return HTMLResponse(content="<h1>403 - Access Denied</h1><p>You don't have permission to view Collections.</p>", status_code=403)
             from sqlalchemy.orm import joinedload
             from app.models import Collection, Client
             collections = db.query(Collection).options(
@@ -247,8 +256,11 @@ def create_app() -> FastAPI:
         request: Request,
         collection_id: int,
         db: Session = Depends(get_db),
+        current_user: dict = Depends(get_current_user),
     ):
         try:
+            if not current_user.is_admin and not current_user.can_create_collections:
+                return HTMLResponse(content="<h1>403 - Access Denied</h1><p>You don't have permission to view Collections.</p>", status_code=403)
             from sqlalchemy.orm import joinedload
             from app.models import Collection, Font
             collection = db.query(Collection).options(
@@ -266,8 +278,11 @@ def create_app() -> FastAPI:
     async def clients_page(
         request: Request,
         db: Session = Depends(get_db),
+        current_user: dict = Depends(get_current_user),
     ):
         try:
+            if not current_user.is_admin and not current_user.can_create_clients:
+                return HTMLResponse(content="<h1>403 - Access Denied</h1><p>You don't have permission to view Clients.</p>", status_code=403)
             from app.models import Client, Font
             clients = db.query(Client).all()
             # Get font count for each client (many-to-many)
@@ -289,8 +304,11 @@ def create_app() -> FastAPI:
         request: Request,
         client_id: int,
         db: Session = Depends(get_db),
+        current_user: dict = Depends(get_current_user),
     ):
         try:
+            if not current_user.is_admin and not current_user.can_create_clients:
+                return HTMLResponse(content="<h1>403 - Access Denied</h1><p>You don't have permission to view Clients.</p>", status_code=403)
             from app.models import Client, Font, FontFamily
             from collections import defaultdict
             
@@ -334,8 +352,11 @@ def create_app() -> FastAPI:
     async def users_page(
         request: Request,
         db: Session = Depends(get_db),
+        current_user: dict = Depends(get_current_user),
     ):
         try:
+            if not current_user.is_admin and not current_user.can_create_users:
+                return HTMLResponse(content="<h1>403 - Access Denied</h1><p>You don't have permission to manage users.</p>", status_code=403)
             from app.models import User, Group as GroupModel
             users = db.query(User).filter(User.is_active == True).all()
             groups = db.query(GroupModel).filter(GroupModel.is_active == True).order_by(GroupModel.name).all()
@@ -361,6 +382,7 @@ def create_app() -> FastAPI:
     async def permissions_page(
         request: Request,
         db: Session = Depends(get_db),
+        current_user: dict = Depends(get_current_admin),
     ):
         try:
             from app.models import User
@@ -374,6 +396,7 @@ def create_app() -> FastAPI:
     @app.get("/ui/logs", response_class=HTMLResponse)
     async def logs_page(
         request: Request,
+        current_user: dict = Depends(get_current_admin),
     ):
         try:
             html = render_template("logs.html", request=request)
@@ -385,6 +408,7 @@ def create_app() -> FastAPI:
     @app.get("/ui/backup", response_class=HTMLResponse)
     async def backup_page(
         request: Request,
+        current_user: dict = Depends(get_current_admin),
     ):
         try:
             html = render_template("backup.html", request=request)

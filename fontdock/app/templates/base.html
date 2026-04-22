@@ -163,15 +163,15 @@
     <div class="nav">
         <a href="/ui/dashboard">Dashboard</a>
         <a href="/ui/fonts">Fonts</a>
-        <a href="/ui/collections">Collections</a>
-        <a href="/ui/clients">Clients</a>
-        <a href="/ui/upload">Upload</a>
-        <a href="/ui/import">Batch Import</a>
-        <a href="/ui/users">Users</a>
+        <a href="/ui/collections" data-perm="can_create_collections">Collections</a>
+        <a href="/ui/clients" data-perm="can_create_clients">Clients</a>
+        <a href="/ui/upload" data-perm="can_upload_fonts">Upload</a>
+        <a href="/ui/import" data-perm="can_upload_fonts">Batch Import</a>
+        <a href="/ui/users" data-perm="can_create_users">Users</a>
         <a href="/ui/groups">Groups</a>
-        <a href="/ui/permissions">Permissions</a>
-        <a href="/ui/logs">Logs</a>
-        <a href="/ui/backup">Backup</a>
+        <a href="/ui/permissions" data-admin-only>Permissions</a>
+        <a href="/ui/logs" data-admin-only>Logs</a>
+        <a href="/ui/backup" data-admin-only>Backup</a>
         <a href="/change-password">Change Password</a>
         <a href="#" onclick="logout()">Logout</a>
         <span id="logged-in-user" style="color: #a0a0a0; margin-left: auto; padding: 0.5rem 0;">Loading...</span>
@@ -244,6 +244,19 @@
             if (response.ok) {
                 const user = await response.json();
                 document.getElementById('logged-in-user').textContent = user.username || 'Unknown';
+                
+                // Apply permission-based nav visibility
+                document.querySelectorAll('.nav a[data-perm]').forEach(link => {
+                    const perm = link.getAttribute('data-perm');
+                    if (!user.is_admin && !user[perm]) {
+                        link.style.display = 'none';
+                    }
+                });
+                document.querySelectorAll('.nav a[data-admin-only]').forEach(link => {
+                    if (!user.is_admin) {
+                        link.style.display = 'none';
+                    }
+                });
             } else if (response.status === 401) {
                 localStorage.removeItem('token');
                 window.location.href = '/ui/login';
