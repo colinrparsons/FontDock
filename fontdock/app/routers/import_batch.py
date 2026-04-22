@@ -32,15 +32,33 @@ def find_font_files(folder_path: str) -> tuple:
     
     Returns (fonts_list, licenses_by_folder) where licenses_by_folder
     maps each folder path to a list of license file dicts.
+    
+    License detection strategy:
+    - Files with license-related extensions (.txt, .pdf, .html, etc.)
+      whose filename contains license keywords (license, eula, receipt, etc.)
+    - Files inside folders named "Licenses", "License", "Legal", "EULA", etc.
+      are treated as license files regardless of filename
+    - License files in subfolders are associated with the parent font folder
     """
     font_extensions = {'.ttf', '.otf', '.ttc', '.woff', '.woff2'}
     license_extensions = {'.txt', '.pdf', '.rtf', '.html', '.htm', '.doc', '.docx'}
-    license_keywords = {'license', 'licence', 'eula', 'terms', 'readme', 'agreement', 'legal'}
+    license_keywords = {
+        'license', 'licence', 'eula', 'terms', 'readme', 
+        'agreement', 'legal', 'receipt', 'invoice', 'vat',
+        'purchase', 'order', 'certificate', 'entitlement',
+    }
+    license_folder_names = {
+        'licenses', 'license', 'licence', 'licences', 'legal', 'eula', 'terms',
+    }
     fonts = []
     licenses_by_folder = {}
     
     for root, dirs, files in os.walk(folder_path):
         folder_licenses = []
+        # Check if this folder is a license subfolder
+        folder_name = os.path.basename(root).lower()
+        is_license_folder = folder_name in license_folder_names
+        
         for file in files:
             ext = os.path.splitext(file)[1].lower()
             filepath = os.path.join(root, file)
@@ -61,11 +79,11 @@ def find_font_files(folder_path: str) -> tuple:
                     'folder': root
                 })
             elif ext in license_extensions:
-                # Check if filename suggests it's a license file
                 name_lower = file.lower()
+                # License file if: in a license-named folder, or filename contains keywords
                 is_license = (
-                    any(kw in name_lower for kw in license_keywords) or
-                    ext == '.txt' and any(kw in name_lower for kw in {'license', 'licence', 'eula', 'readme'})
+                    is_license_folder or
+                    any(kw in name_lower for kw in license_keywords)
                 )
                 if is_license:
                     folder_licenses.append({
@@ -75,7 +93,17 @@ def find_font_files(folder_path: str) -> tuple:
                     })
         
         if folder_licenses:
-            licenses_by_folder[root] = folder_licenses
+            # If this is a license subfolder, associate licenses with parent folder
+            # so they get attached to fonts in the parent folder
+            if is_license_folder:
+                parent_folder = os.path.dirname(root)
+                if parent_folder not in licenses_by_folder:
+                    licenses_by_folder[parent_folder] = []
+                licenses_by_folder[parent_folder].extend(folder_licenses)
+            else:
+                if root not in licenses_by_folder:
+                    licenses_by_folder[root] = []
+                licenses_by_folder[root].extend(folder_licenses)
     
     return fonts, licenses_by_folder
 
