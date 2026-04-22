@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.db import engine, Base, get_db
 from app.config import get_settings
 from app.routers import auth, fonts, collections, clients, users, admin as admin_router, import_batch, change_password, groups, licenses
-from app.routers.auth import get_current_user, get_current_admin
+from app.routers.auth import get_current_user, get_current_admin, get_user_from_cookie
 from app.logging_config import setup_logging
 
 # Setup logging with file output
@@ -162,9 +162,11 @@ def create_app() -> FastAPI:
     async def upload_page(
         request: Request,
         db: Session = Depends(get_db),
-        current_user: dict = Depends(get_current_user),
+        current_user = Depends(get_user_from_cookie),
     ):
         try:
+            if not current_user:
+                return HTMLResponse(content="<script>window.location.href='/ui/login'</script>", status_code=401)
             if not current_user.is_admin and not current_user.can_upload_fonts:
                 return HTMLResponse(content="<h1>403 - Access Denied</h1><p>You don't have permission to upload fonts.</p>", status_code=403)
             from app.models import Client, Collection
@@ -192,9 +194,11 @@ def create_app() -> FastAPI:
     @app.get("/ui/import", response_class=HTMLResponse)
     async def import_batch_page(
         request: Request,
-        current_user: dict = Depends(get_current_user),
+        current_user = Depends(get_user_from_cookie),
     ):
         try:
+            if not current_user:
+                return HTMLResponse(content="<script>window.location.href='/ui/login'</script>", status_code=401)
             if not current_user.is_admin and not current_user.can_upload_fonts:
                 return HTMLResponse(content="<h1>403 - Access Denied</h1><p>You don't have permission to import fonts.</p>", status_code=403)
             html = render_template("import_batch.html", request=request)
@@ -234,9 +238,11 @@ def create_app() -> FastAPI:
     async def collections_page(
         request: Request,
         db: Session = Depends(get_db),
-        current_user: dict = Depends(get_current_user),
+        current_user = Depends(get_user_from_cookie),
     ):
         try:
+            if not current_user:
+                return HTMLResponse(content="<script>window.location.href='/ui/login'</script>", status_code=401)
             if not current_user.is_admin and not current_user.can_create_collections:
                 return HTMLResponse(content="<h1>403 - Access Denied</h1><p>You don't have permission to view Collections.</p>", status_code=403)
             from sqlalchemy.orm import joinedload
@@ -256,9 +262,11 @@ def create_app() -> FastAPI:
         request: Request,
         collection_id: int,
         db: Session = Depends(get_db),
-        current_user: dict = Depends(get_current_user),
+        current_user = Depends(get_user_from_cookie),
     ):
         try:
+            if not current_user:
+                return HTMLResponse(content="<script>window.location.href='/ui/login'</script>", status_code=401)
             if not current_user.is_admin and not current_user.can_create_collections:
                 return HTMLResponse(content="<h1>403 - Access Denied</h1><p>You don't have permission to view Collections.</p>", status_code=403)
             from sqlalchemy.orm import joinedload
@@ -278,9 +286,11 @@ def create_app() -> FastAPI:
     async def clients_page(
         request: Request,
         db: Session = Depends(get_db),
-        current_user: dict = Depends(get_current_user),
+        current_user = Depends(get_user_from_cookie),
     ):
         try:
+            if not current_user:
+                return HTMLResponse(content="<script>window.location.href='/ui/login'</script>", status_code=401)
             if not current_user.is_admin and not current_user.can_create_clients:
                 return HTMLResponse(content="<h1>403 - Access Denied</h1><p>You don't have permission to view Clients.</p>", status_code=403)
             from app.models import Client, Font
@@ -304,9 +314,11 @@ def create_app() -> FastAPI:
         request: Request,
         client_id: int,
         db: Session = Depends(get_db),
-        current_user: dict = Depends(get_current_user),
+        current_user = Depends(get_user_from_cookie),
     ):
         try:
+            if not current_user:
+                return HTMLResponse(content="<script>window.location.href='/ui/login'</script>", status_code=401)
             if not current_user.is_admin and not current_user.can_create_clients:
                 return HTMLResponse(content="<h1>403 - Access Denied</h1><p>You don't have permission to view Clients.</p>", status_code=403)
             from app.models import Client, Font, FontFamily
@@ -352,9 +364,11 @@ def create_app() -> FastAPI:
     async def users_page(
         request: Request,
         db: Session = Depends(get_db),
-        current_user: dict = Depends(get_current_user),
+        current_user = Depends(get_user_from_cookie),
     ):
         try:
+            if not current_user:
+                return HTMLResponse(content="<script>window.location.href='/ui/login'</script>", status_code=401)
             if not current_user.is_admin and not current_user.can_create_users:
                 return HTMLResponse(content="<h1>403 - Access Denied</h1><p>You don't have permission to manage users.</p>", status_code=403)
             from app.models import User, Group as GroupModel
@@ -382,9 +396,11 @@ def create_app() -> FastAPI:
     async def permissions_page(
         request: Request,
         db: Session = Depends(get_db),
-        current_user: dict = Depends(get_current_admin),
+        current_user = Depends(get_user_from_cookie),
     ):
         try:
+            if not current_user or not current_user.is_admin:
+                return HTMLResponse(content="<script>window.location.href='/ui/login'</script>", status_code=401)
             from app.models import User
             users = db.query(User).filter(User.is_active == True).all()
             html = render_template("permissions.html", request=request, users=users)
@@ -396,9 +412,11 @@ def create_app() -> FastAPI:
     @app.get("/ui/logs", response_class=HTMLResponse)
     async def logs_page(
         request: Request,
-        current_user: dict = Depends(get_current_admin),
+        current_user = Depends(get_user_from_cookie),
     ):
         try:
+            if not current_user or not current_user.is_admin:
+                return HTMLResponse(content="<script>window.location.href='/ui/login'</script>", status_code=401)
             html = render_template("logs.html", request=request)
             return HTMLResponse(content=html)
         except Exception as e:
@@ -408,9 +426,11 @@ def create_app() -> FastAPI:
     @app.get("/ui/backup", response_class=HTMLResponse)
     async def backup_page(
         request: Request,
-        current_user: dict = Depends(get_current_admin),
+        current_user = Depends(get_user_from_cookie),
     ):
         try:
+            if not current_user or not current_user.is_admin:
+                return HTMLResponse(content="<script>window.location.href='/ui/login'</script>", status_code=401)
             html = render_template("backup.html", request=request)
             return HTMLResponse(content=html)
         except Exception as e:

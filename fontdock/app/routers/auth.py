@@ -4,6 +4,7 @@ from datetime import timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -51,6 +52,42 @@ async def get_current_user(
     
     if not active_session:
         raise credentials_exception
+    
+    return user
+
+
+async def get_user_from_cookie(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> User:
+    """Get current user from cookie token (for UI page routes)."""
+    from app.models import UserSession
+    
+    token = request.cookies.get("fontdock_token")
+    if not token:
+        return None
+    
+    token_data = decode_token(token)
+    if token_data is None or token_data.username is None:
+        return None
+    
+    username = token_data.username
+    if username is None:
+        return None
+    
+    user = get_user_by_username(db, username)
+    if user is None:
+        return None
+    
+    if not user.is_active:
+        return None
+    
+    active_session = db.query(UserSession).filter(
+        UserSession.user_id == user.id,
+        UserSession.is_active == True
+    ).first()
+    if not active_session:
+        return None
     
     return user
 
@@ -109,7 +146,15 @@ async def login(
     
     logger.info(f"[AUDIT] User login: username='{user.username}', ip='{request.client.host if request.client else 'unknown'}'")
     
-    return {"access_token": access_token, "token_type": "bearer"}
+    response = JSONResponse({"access_token": access_token, "token_type": "bearer"})
+    response.set_cookie(
+        key="fontdock_token",
+        value=access_token,
+        httponly=True,
+        max_age=60 * 60 * 24,  # 1 day
+        samesite="lax",
+    )
+    return response
 
 
 @router.get("/me", response_model=User)
