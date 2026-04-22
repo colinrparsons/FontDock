@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session, joinedload
 
@@ -92,6 +92,34 @@ def create_app() -> FastAPI:
             "version": "0.1.0",
             "docs_url": "/docs",
         }
+    
+    # Favicon and apple-touch-icon routes (browsers request these at root)
+    static_dir = Path(__file__).parent / "static"
+    
+    @app.get("/favicon.ico")
+    async def favicon():
+        ico_path = static_dir / "favicon.ico"
+        if ico_path.exists():
+            return FileResponse(str(ico_path), media_type="image/x-icon")
+        return FileResponse(str(static_dir / "favicon.svg"), media_type="image/svg+xml")
+    
+    @app.get("/favicon.svg")
+    async def favicon_svg():
+        return FileResponse(str(static_dir / "favicon.svg"), media_type="image/svg+xml")
+    
+    @app.get("/apple-touch-icon.png")
+    async def apple_touch_icon():
+        png_path = static_dir / "apple-touch-icon.png"
+        if png_path.exists():
+            return FileResponse(str(png_path), media_type="image/png")
+        return FileResponse(str(static_dir / "favicon.svg"), media_type="image/svg+xml")
+    
+    @app.get("/apple-touch-icon-precomposed.png")
+    async def apple_touch_icon_precomposed():
+        png_path = static_dir / "apple-touch-icon-precomposed.png"
+        if png_path.exists():
+            return FileResponse(str(png_path), media_type="image/png")
+        return FileResponse(str(static_dir / "apple-touch-icon.png"), media_type="image/png")
     
     @app.get("/health")
     async def health_check():
