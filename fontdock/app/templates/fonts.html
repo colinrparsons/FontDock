@@ -56,9 +56,9 @@ if (!token) {
                                 {% if font.extension in ['.ttf', '.ttc'] %}TrueType{% elif font.extension == '.otf' %}OpenType{% else %}{{ font.extension | upper }}{% endif %}
                             {% else %}-{% endif %}
                         </span>
-                        <a href="#" class="btn" onclick="event.stopPropagation(); downloadFont('{{ font.id }}');">Download</a>
-                        <a href="#" class="btn" style="background: #6366f1;" onclick="event.stopPropagation(); manageLicense('{{ font.id }}');">License{% if font.licenses and font.licenses|length > 0 %} ({{ font.licenses|length }}){% endif %}</a>
-                        <a href="#" class="btn" style="background: #dc3545;" onclick="event.stopPropagation(); deleteFont('{{ font.id }}');">Delete</a>
+                        <a href="#" class="btn" onclick="event.preventDefault(); event.stopPropagation(); downloadFont('{{ font.id }}');">Download</a>
+                        <a href="#" class="btn" style="background: #6366f1;" onclick="event.preventDefault(); event.stopPropagation(); manageLicense('{{ font.id }}');">License{% if font.licenses and font.licenses|length > 0 %} ({{ font.licenses|length }}){% endif %}</a>
+                        <a href="#" class="btn" style="background: #dc3545;" onclick="event.preventDefault(); event.stopPropagation(); deleteFont('{{ font.id }}');">Delete</a>
                     </div>
                 </div>
                 {% endfor %}
