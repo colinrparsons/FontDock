@@ -1,6 +1,6 @@
 # InDesign Auto-Activation - Complete ✅
 
-**Date:** April 9, 2026  
+**Date:** April 22, 2026  
 **Status:** Working and Production Ready
 
 ## Overview
@@ -9,22 +9,23 @@ Successfully implemented automatic font activation for Adobe InDesign. When a do
 
 ## How It Works
 
-1. **ExtendScript Startup Script** (`FontDockAutoActivate.jsx`) runs when InDesign starts
+1. **ExtendScript Startup Script** (`FontDockAutoActivate_InDesign.jsx`) runs when InDesign starts
 2. **Event Listener** attached to `afterOpen` event triggers when documents are opened
-3. **Font Detection** scans document for missing/substituted fonts
-4. **HTTP Request** sent to local FontDock client (port 8765) with list of missing fonts
-5. **Font Activation** FontDock client activates fonts by copying to `~/Library/Fonts/`
+3. **Font Detection** scans document for missing/substituted fonts using `font.fontFamily` and `font.fontStyleName`
+4. **HTTP Request** sent to local FontDock client (port 8765) with `{"fonts": [{family, style}, ...]}` payload
+5. **Smart Font Matching** FontDock client uses `database.smart_match_font()` with 5-strategy matching
+6. **Font Activation** matched fonts are activated by copying to `~/Library/Fonts/`
 
 ## Architecture
 
 ```
 InDesign Document Open
     ↓
-ExtendScript Event Listener
+ExtendScript afterOpen Event Listener
     ↓
-Detect Missing Fonts
+Detect Missing Fonts (font.fontFamily + font.fontStyleName)
     ↓
-Build JSON: {"fonts": ["Costa Display Wave Regular", ...]}
+Build JSON: {"fonts": [{"family": "KFC", "style": "Regular"}, ...]}
     ↓
 Execute curl via AppleScript (app.doScript)
     ↓
@@ -32,7 +33,12 @@ HTTP POST → http://127.0.0.1:8765/open-fonts
     ↓
 FontDock Client (local_api.py)
     ↓
-Smart Font Name Matching (PostScript conversion)
+Smart Font Matching (database.smart_match_font)
+  Strategy 1: PostScript name exact match (case-insensitive)
+  Strategy 2: Family+Style match + constructed PS name (KFC+Regular → KFC-Regular)
+  Strategy 3: Full name match
+  Strategy 4: Family name match (all members)
+  Strategy 5: Fuzzy search fallback
     ↓
 Activate Fonts → ~/Library/Fonts/
 ```
@@ -40,35 +46,45 @@ Activate Fonts → ~/Library/Fonts/
 ## Files
 
 ### ExtendScript
-- **Location:** `~/Library/Preferences/Adobe InDesign/Version 21.0/en_GB/Scripts/Startup Scripts/FontDockAutoActivate.jsx`
+- **Location:** `~/Library/Application Support/Adobe/Startup Scripts CS6/InDesign/FontDockAutoActivate_InDesign.jsx`
 - **Purpose:** Auto-activation script that runs on InDesign startup
 - **Key Features:**
   - Event listener for document open
   - Font status detection (NOT_AVAILABLE, SUBSTITUTED)
-  - Full font name extraction (family + style)
-  - JSON payload construction
+  - Family + style extraction (not just full name)
+  - JSON payload construction with `{family, style}` objects
   - HTTP request via AppleScript bridge
 
 ### FontDock Client
 - **File:** `macos-client/local_api.py`
 - **Port:** 8765
 - **Endpoint:** `POST /open-fonts`
-- **Payload:** `{"fonts": ["Font Name Style", ...]}`
+- **Payload:** `{"fonts": [{"family": "KFC", "style": "Regular"}, ...]}`
 - **Response:** Array of activation results
+
+### Smart Matching
+- **File:** `macos-client/database.py` — `smart_match_font()` method
+- **5 strategies** tried in priority order, all case-insensitive
+- See [Font Matching Engine](08-font-matching-engine.md) for full details
 
 ## Font Name Matching
 
 ### Challenge
-InDesign provides font names like: `"Costa Display Wave Regular"`  
-Database stores PostScript names like: `"CostaDisplay-WaveRegular"`
+InDesign provides font names as family+style: `family="KFC", style="Regular"`  
+Database stores PostScript names like: `KFC-Regular` with family_name `Kfc` (title-cased)
 
-### Solution
-Smart conversion with multiple split attempts:
-1. Try exact match first
-2. Convert to PostScript format by trying different family/style split points:
-   - `"CostaDisplayWave-Regular"` (split at last word)
-   - `"CostaDisplay-WaveRegular"` (split at second-to-last word) ✅
-   - Continue until match found
+### Solution: Smart Multi-Field Matching
+1. **PostScript name** exact match (case-insensitive)
+2. **Family + Style** match + **constructed PostScript** name (`KFC` + `Regular` → `KFC-Regular`)
+3. **Full name** match (`KFC Regular`)
+4. **Family name** match (case-insensitive, returns all members)
+5. **Fuzzy search** fallback (LIKE across all fields)
+
+### Case-Insensitive Matching
+All matching uses `COLLATE NOCASE` in SQLite. This is critical because:
+- InDesign reports `font.fontFamily` using the font's internal name (e.g., `KFC`)
+- FontDock normalizes family names to title case on ingest (e.g., `Kfc`)
+- Without case-insensitive matching, these would never match
 
 ## Testing Results
 
@@ -79,6 +95,7 @@ Smart conversion with multiple split attempts:
 - Costa Display Bold
 - Costa Display Wave Regular
 - Costa Display Wave Bold
+- KFC-Regular (previously failed due to case mismatch — fixed in v1.3)
 
 ### ❌ Not Activated (Not in Database)
 - Helvetica Neue LT Std 75 Bold
@@ -89,15 +106,20 @@ Smart conversion with multiple split attempts:
 ## Installation
 
 ### 1. ExtendScript
-Copy `FontDockAutoActivate.jsx` to:
+Run the install script:
+```bash
+cd adobe-scripts
+./install.sh
 ```
-~/Library/Preferences/Adobe InDesign/Version 21.0/en_GB/Scripts/Startup Scripts/
+Or manually copy `FontDockAutoActivate_InDesign.jsx` to:
+```
+~/Library/Application Support/Adobe/Startup Scripts CS6/InDesign/
 ```
 
 ### 2. FontDock Client
 Ensure FontDock client is running:
 ```bash
-cd /Users/colinparsons/Documents/Developement/FontDock/macos-client
+cd macos-client
 python3 main.py
 ```
 
@@ -129,11 +151,10 @@ Required for startup script to load.
 ## Debugging
 
 ### Manual Test Script
-Run `DebugFontInfo.jsx` from Scripts Panel to see font details:
+Run `CheckMissingFonts_InDesign.jsx` from Scripts Panel to see font details:
 ```
-Window > Utilities > Scripts > DebugFontInfo
+Window > Utilities > Scripts > CheckMissingFonts
 ```
-Output written to: `~/Desktop/indesign_font_debug.txt`
 
 ### FontDock Client Logs
 ```bash
@@ -145,13 +166,19 @@ tail -f ~/Library/Application\ Support/FontDock/fontdock.log
 lsof -i :8765
 ```
 
+### Test Smart Matching
+```bash
+sqlite3 ~/Library/Application\ Support/FontDock/fontdock.db
+> SELECT id, postscript_name, family_name, style_name FROM fonts WHERE family_name COLLATE NOCASE = 'KFC';
+```
+
 ## Future Enhancements
 
-1. **User Notification** - Optional alert when fonts are activated
-2. **Activation Report** - Show which fonts were activated vs not found
-3. **Batch Download** - Pre-download fonts from server if not in local cache
-4. **Font Sync** - Auto-sync with server before activation
-5. **Preferences Panel** - Enable/disable auto-activation, configure server URL
+1. **Font Fingerprinting** — Hash-based exact version matching (like Extensis Font Sense)
+2. **Alias Lookup** — Table for legacy name variants
+3. **Collection Scoring** — Rank collections by how many missing fonts they contain
+4. **Batch Download** — Pre-download fonts from server if not in local cache
+5. **Font Sync** — Auto-sync with server before activation
 
 ## Notes
 
@@ -160,12 +187,15 @@ lsof -i :8765
 - Works with both new documents and existing documents
 - Compatible with InDesign 2026 (Version 21.0)
 - Requires FontDock client to be running on localhost:8765
+- Version-independent startup script path (`Startup Scripts CS6/`)
 
 ## Success Criteria ✅
 
 - [x] Auto-detect missing fonts on document open
 - [x] Send HTTP request to FontDock client
 - [x] Match InDesign font names to database fonts
+- [x] Case-insensitive matching (KFC vs Kfc)
+- [x] Constructed PostScript name matching (family+style → PS name)
 - [x] Activate fonts automatically
 - [x] Non-blocking (doesn't delay document opening)
 - [x] Silent operation (no user prompts)

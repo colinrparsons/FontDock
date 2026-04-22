@@ -52,6 +52,7 @@ This can be part of the GUI app initially.
 - login to server
 - store token securely in macOS Keychain (via Python keyring)
 - refresh or re-login when needed
+- **Offline mode**: "Work Offline" button on login dialog loads local DB without server connection
 
 ### Metadata sync
 

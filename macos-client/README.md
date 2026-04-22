@@ -70,11 +70,23 @@ chmod +x main.py
 
 The client automatically detects when Adobe documents are opened and activates missing fonts:
 
-- **InDesign**: Startup script with `afterOpen` event sends missing font info via HTTP
+- **InDesign**: Startup script with `afterOpen` event sends `{family, style}` objects via HTTP
 - **Illustrator**: App watcher detects new `.ai` files, parses fonts from disk
 - **Photoshop**: App watcher detects new `.psd` files, scans text layers for font names
 
 All three apps are version-independent — the client auto-detects installed versions.
+
+### Smart Font Matching
+
+FontDock uses a Font Sense-inspired multi-field matching engine (`database.smart_match_font()`) that tries 5 strategies in priority order, all case-insensitive:
+
+1. **PostScript name** exact match (most reliable)
+2. **Family + Style** match + constructed PostScript name (e.g. `KFC` + `Regular` → `KFC-Regular`)
+3. **Full name** match
+4. **Family name** match (all members)
+5. **Fuzzy search** fallback
+
+This ensures fonts like `KFC-Regular` are found even when InDesign reports `family="KFC"` and the DB stores `family_name="Kfc"`.
 
 Install scripts:
 ```bash
@@ -110,9 +122,11 @@ The persistent status bar shows:
 ## Offline Mode
 
 The client works without a server connection:
+- **Work Offline** button on the login dialog launches the client without server authentication
 - Fonts already in the local cache can be activated/deactivated
 - Local DB is used for browsing and search
 - Clear "working offline" messaging in the status bar
+- Last username is remembered for convenience
 - Sync will retry when the server becomes available
 
 ## Local Storage

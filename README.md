@@ -95,7 +95,7 @@ This keeps the project realistic, testable, and useful at every stage.
 
 ## Status
 
-**Version 1.2.0** - Full backup/restore, bulk user import, and UI consistency!
+**Version 1.3.0** - Font Sense-style smart matching, unlimited sync, family name normalization!
 
 ### ✅ Completed Features
 
@@ -140,6 +140,15 @@ This keeps the project realistic, testable, and useful at every stage.
 - ✅ **Server Log Viewer** — Web UI to view, download, and clear server logs with auto-refresh
 - ✅ **UI Font Size Consistency** — Standardized 13px/12px typography across all pages; consistent input, button, and label sizing
 - ✅ **Batch Font Import** — Import fonts from server folder or ZIP file with automatic client creation and duplicate detection
+
+### 🆕 v1.3 Features — Smart Font Matching & Sync Improvements
+
+- ✅ **Font Sense-style Smart Matching** — Multi-field matching engine (PostScript name → Family+Style → Full name → Family → Fuzzy) inspired by Extensis Font Sense, all case-insensitive
+- ✅ **Case-Insensitive Matching** — Fonts like `KFC-Regular` now match regardless of case differences between InDesign reports and DB storage (`KFC` vs `Kfc`)
+- ✅ **Unlimited Font Sync** — Removed all pagination limits; client syncs entire font library (12,000+ fonts)
+- ✅ **Family Name Normalization** — Server normalizes ALL CAPS family names to title case on ingest; admin endpoint to fix existing records
+- ✅ **Offline Mode** — Login dialog includes "Work Offline" button; client loads local DB and works without server connection
+- ✅ **Constructed PostScript Matching** — InDesign sends `family+style`, client constructs PostScript name (e.g. `KFC` + `Regular` → `KFC-Regular`) for matching
 
 ### 🚀 Quick Start
 

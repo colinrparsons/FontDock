@@ -19,9 +19,9 @@
 
 ---
 
-## Version 1.1.0 🚧 IN PROGRESS
+## Version 1.1.0 ✅ COMPLETE
 
-**Target:** Q2 2026
+**Released:** April 2026
 
 ### Windows Client
 - [ ] Port macOS client to Windows
@@ -54,6 +54,22 @@
 - [ ] CEP panel for Illustrator
 - [ ] Collection-based activation
 - [ ] Document font list
+
+---
+
+## Version 1.3.0 ✅ COMPLETE
+
+**Released:** April 2026
+
+### Smart Font Matching & Sync Improvements
+- [x] Font Sense-style smart matching engine (5-strategy priority matching)
+- [x] Case-insensitive font matching (COLLATE NOCASE across all queries)
+- [x] Constructed PostScript name matching (family+style → PS name)
+- [x] Unlimited font sync (removed pagination limits, 12,000+ fonts)
+- [x] Family name normalization (ALL CAPS → title case on ingest)
+- [x] Admin endpoint to normalize existing family names
+- [x] Offline mode (Work Offline button on login dialog)
+- [x] Fixed KFC-Regular auto-activation bug (case mismatch)
 
 ---
 
@@ -116,6 +132,19 @@
 - [ ] Context-aware suggestions
 - [ ] Auto-tagging based on visual analysis
 - [ ] Font similarity search
+
+---
+
+## Version 1.4.0 🚧 IN PROGRESS
+
+**Target:** Q2 2026
+
+### Smart Matching Enhancements
+- [ ] Font alias lookup table for legacy name variants
+- [ ] Collection candidate scoring (rank by missing font count)
+- [ ] Font fingerprinting (hash-based exact version matching)
+- [ ] Foundry-aware matching (version disambiguation)
+- [ ] Font version string storage and comparison
 
 ---
 
@@ -191,9 +220,10 @@
 ### macOS Client
 - [ ] Code refactoring (separate concerns)
 - [ ] Better error messages
-- [ ] Offline mode improvements
+- [x] Offline mode improvements (Work Offline button)
 - [ ] Settings sync across devices
 - [ ] Notification system
+- [x] Smart font matching engine
 
 ---
 
@@ -253,5 +283,5 @@ Want to help build these features? Check out:
 
 ---
 
-**Last Updated:** April 16, 2026  
+**Last Updated:** April 22, 2026  
 **Maintainer:** Colin Parsons

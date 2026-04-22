@@ -38,21 +38,15 @@ The script should:
 
 ```json
 {
-  "document_name": "Tesco_Summer_POS_2026.indd",
-  "document_path": "/Volumes/Jobs/Tesco/Summer/POS/Tesco_Summer_POS_2026.indd",
-  "missing_fonts": [
-    "Gotham-Bold",
-    "Gotham-Book",
-    "Knockout-HTF48-Featherweight"
-  ],
-  "all_fonts": [
-    "Gotham-Bold",
-    "Gotham-Book",
-    "Knockout-HTF48-Featherweight",
-    "HelveticaNeueLTStd-Bd"
+  "fonts": [
+    {"family": "Gotham", "style": "Bold"},
+    {"family": "Gotham", "style": "Book"},
+    {"family": "Knockout HTF48", "style": "Featherweight"}
   ]
 }
 ```
+
+InDesign reports `font.fontFamily` and `font.fontStyleName` separately, which provides more reliable matching than full font names.
 
 ## Delivery methods to local client
 
