@@ -106,12 +106,12 @@ if (!token) {
                 <td class="session-count" data-user-id="{{ user.id }}">-</td>
                 <td>{{ user.created_at.strftime('%Y-%m-%d') }}</td>
                 <td style="white-space: nowrap;">
-                    <a href="#" class="btn" style="font-size: 12px; padding: 0.2rem 0.4rem;" onclick="event.preventDefault(); editUser('{{ user.id }}', '{{ user.username }}')">Edit</a>
+                    <a href="#" class="btn" onclick="event.preventDefault(); editUser('{{ user.id }}', '{{ user.username }}')">Edit</a>
                     {% if user.is_active %}
-                    <a href="#" class="btn" style="background: #dc3545; font-size: 12px; padding: 0.2rem 0.4rem;" onclick="event.preventDefault(); deactivateUser('{{ user.id }}')">Deactivate</a>
+                    <a href="#" class="btn" style="background: #dc3545;" onclick="event.preventDefault(); deactivateUser('{{ user.id }}')">Deactivate</a>
                     {% endif %}
-                    <button class="btn" style="background: #dc3545; font-size: 12px; padding: 0.2rem 0.4rem;" onclick="deleteUser('{{ user.id }}', '{{ user.username }}')">Delete</button>
-                    <button class="btn logout-btn" data-user-id="{{ user.id }}" style="background: #fd7e14; display: none; font-size: 12px; padding: 0.2rem 0.4rem;" onclick="logoutUser('{{ user.id }}', '{{ user.username }}')">Logout</button>
+                    <button class="btn" style="background: #dc3545;" onclick="deleteUser('{{ user.id }}', '{{ user.username }}')">Delete</button>
+                    <button class="btn logout-btn" data-user-id="{{ user.id }}" style="background: #fd7e14; display: none;" onclick="logoutUser('{{ user.id }}', '{{ user.username }}')">Logout</button>
                 </td>
             </tr>
             {% endfor %}
