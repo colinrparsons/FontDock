@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.routers.auth import get_current_admin
-from app.models import User, Font as FontModel, FontFamily, Client
+from app.models import User, Font as FontModel, FontFamily, Client, FontLicense
 from app.services.font_ingest_service import extract_font_metadata, normalize_family_name
 
 router = APIRouter(prefix="/api/import", tags=["import"])
@@ -27,16 +27,25 @@ def calculate_file_hash(filepath: str) -> str:
     return sha256.hexdigest()
 
 
-def find_font_files(folder_path: str) -> List[Dict[str, Any]]:
-    """Recursively find all font files in folder."""
+def find_font_files(folder_path: str) -> tuple:
+    """Recursively find all font files and license files in folder.
+    
+    Returns (fonts_list, licenses_by_folder) where licenses_by_folder
+    maps each folder path to a list of license file dicts.
+    """
     font_extensions = {'.ttf', '.otf', '.ttc', '.woff', '.woff2'}
+    license_extensions = {'.txt', '.pdf', '.rtf', '.html', '.htm', '.doc', '.docx'}
+    license_keywords = {'license', 'licence', 'eula', 'terms', 'readme', 'agreement', 'legal'}
     fonts = []
+    licenses_by_folder = {}
     
     for root, dirs, files in os.walk(folder_path):
+        folder_licenses = []
         for file in files:
             ext = os.path.splitext(file)[1].lower()
+            filepath = os.path.join(root, file)
+            
             if ext in font_extensions:
-                filepath = os.path.join(root, file)
                 # Determine client from folder structure
                 rel_path = os.path.relpath(filepath, folder_path)
                 path_parts = rel_path.split(os.sep)
@@ -48,10 +57,27 @@ def find_font_files(folder_path: str) -> List[Dict[str, Any]]:
                     'path': filepath,
                     'filename': file,
                     'client_name': client_name,
-                    'extension': ext
+                    'extension': ext,
+                    'folder': root
                 })
+            elif ext in license_extensions:
+                # Check if filename suggests it's a license file
+                name_lower = file.lower()
+                is_license = (
+                    any(kw in name_lower for kw in license_keywords) or
+                    ext == '.txt' and any(kw in name_lower for kw in {'license', 'licence', 'eula', 'readme'})
+                )
+                if is_license:
+                    folder_licenses.append({
+                        'path': filepath,
+                        'filename': file,
+                        'extension': ext
+                    })
+        
+        if folder_licenses:
+            licenses_by_folder[root] = folder_licenses
     
-    return fonts
+    return fonts, licenses_by_folder
 
 
 @router.post("/batch-folder")
@@ -80,11 +106,13 @@ async def batch_import_from_folder(
             detail=f"Folder not found: {folder_path}"
         )
     
-    # Find all font files
-    font_files = find_font_files(folder_path)
-    logger.info(f"[BATCH IMPORT] Found {len(font_files)} font files in {folder_path}")
+    # Find all font files and license files
+    font_files, licenses_by_folder = find_font_files(folder_path)
+    logger.info(f"[BATCH IMPORT] Found {len(font_files)} font files and {sum(len(v) for v in licenses_by_folder.values())} license files in {folder_path}")
     for f in font_files[:5]:  # Log first 5 for debugging
         logger.info(f"[BATCH IMPORT] File: {f['path']} -> Client: {f['client_name']}")
+    for folder, lics in licenses_by_folder.items():
+        logger.info(f"[BATCH IMPORT] License files in {folder}: {[l['filename'] for l in lics]}")
     
     if not font_files:
         raise HTTPException(
@@ -97,9 +125,13 @@ async def batch_import_from_folder(
         'imported': 0,
         'updated': 0,
         'failed': 0,
+        'licenses_attached': 0,
         'clients_created': [],
         'errors': []
     }
+    
+    # Track which license files have been attached to which font to avoid duplicates
+    attached_license_combos = set()  # (font_id, license_path) tuples
     
     # Get or create clients
     clients_cache = {}
@@ -214,6 +246,37 @@ async def batch_import_from_folder(
                 db.commit()
                 
                 results['imported'] += 1
+            
+            # Auto-attach license files from the same folder
+            font_folder = font_info.get('folder', os.path.dirname(font_info['path']))
+            folder_licenses = licenses_by_folder.get(font_folder, [])
+            for lic_info in folder_licenses:
+                combo = (font.id, lic_info['path'])
+                if combo in attached_license_combos:
+                    continue
+                try:
+                    import uuid
+                    lic_ext = lic_info['extension']
+                    lic_storage_name = f"{uuid.uuid4().hex}{lic_ext}"
+                    lic_storage_dir = Path("./storage/licenses")
+                    lic_storage_dir.mkdir(parents=True, exist_ok=True)
+                    lic_storage_path = lic_storage_dir / lic_storage_name
+                    shutil.copy2(lic_info['path'], lic_storage_path)
+                    
+                    license_record = FontLicense(
+                        font_id=font.id,
+                        license_type='desktop',
+                        filename_original=lic_info['filename'],
+                        filename_storage=lic_storage_name,
+                        storage_path=str(lic_storage_path),
+                        notes='Auto-attached during batch import'
+                    )
+                    db.add(license_record)
+                    attached_license_combos.add(combo)
+                    results['licenses_attached'] += 1
+                    logger.info(f"[BATCH IMPORT] Attached license {lic_info['filename']} to font {font.postscript_name or font.filename_original}")
+                except Exception as e:
+                    logger.warning(f"[BATCH IMPORT] Failed to attach license {lic_info['filename']}: {e}")
                 
         except Exception as e:
             results['failed'] += 1
@@ -221,7 +284,7 @@ async def batch_import_from_folder(
     
     return {
         'success': True,
-        'message': f"Batch import complete: {results['imported']} imported, {results['updated']} updated, {results['failed']} failed",
+        'message': f"Batch import complete: {results['imported']} imported, {results['updated']} updated, {results['failed']} failed, {results['licenses_attached']} licenses attached",
         'clients_created': results['clients_created'],
         'errors': results['errors'],
         'results': results

@@ -21,9 +21,14 @@ if (!token) {
   Client1/
     font1.ttf
     font2.otf
+    License.txt
+    EULA.pdf
   Client2/
     font3.ttf
     font4.otf</pre>
+    <p style="color: #6366f1; margin-bottom: 1rem; font-size: 13px;">
+        <strong>Auto License Detection:</strong> License files (txt, pdf) with names containing "license", "licence", "eula", "terms", or "readme" will be automatically attached to all fonts in the same folder.
+    </p>
     
     <div style="display: flex; gap: 1rem; align-items: flex-end;">
         <div style="flex: 1;">
@@ -43,7 +48,7 @@ if (!token) {
 <div class="card">
     <h3>Import from ZIP File</h3>
     <p style="color: #6c757d; margin-bottom: 1rem;">
-        Upload a ZIP file containing fonts organized by client folders.
+        Upload a ZIP file containing fonts organized by client folders. License files in the same folder as fonts will be auto-detected and attached.
     </p>
     
     <div style="display: flex; gap: 1rem; align-items: flex-end;">
@@ -117,6 +122,10 @@ async function startImport() {
                     <div style="background: #f8f9fa; padding: 1rem; border-radius: 4px; text-align: center;">
                         <div style="font-size: 2rem; color: #dc3545; font-weight: bold;">${data.results.failed}</div>
                         <div class="text-small" style="color: #6c757d;">Failed</div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 1rem; border-radius: 4px; text-align: center;">
+                        <div style="font-size: 2rem; color: #6366f1; font-weight: bold;">${data.results.licenses_attached || 0}</div>
+                        <div class="text-small" style="color: #6c757d;">Licenses Attached</div>
                     </div>
                 </div>
             `;
