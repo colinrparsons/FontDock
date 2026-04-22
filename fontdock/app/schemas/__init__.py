@@ -1,5 +1,5 @@
 """Pydantic schemas for FontDock."""
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional, List, TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict
 
@@ -64,6 +64,7 @@ class User(UserBase):
     model_config = ConfigDict(from_attributes=True)
     
     id: int
+    group_ids: List[int] = []
     created_at: datetime
     updated_at: datetime
 
@@ -218,6 +219,7 @@ class Font(FontBase):
     file_size_bytes: Optional[int] = None
     family_name: Optional[str] = None  # Added for API response
     client_ids: List[int] = []  # Added for many-to-many client relationship
+    group_ids: List[int] = []  # Groups that have access to this font
     created_at: datetime
     updated_at: datetime
 
@@ -265,6 +267,7 @@ class FontDetail(Font):
     family: Optional[FontFamily] = None
     collections: List[Collection] = []
     aliases: List[FontAlias] = []
+    licenses: List["FontLicenseSchema"] = []
 
 
 class FontList(BaseModel):
@@ -340,3 +343,92 @@ class FontUsageEvent(FontUsageEventBase):
     id: int
     user_id: int
     created_at: datetime
+
+
+# ============= Group Schemas =============
+
+class GroupBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    is_active: bool = True
+
+
+class GroupCreate(GroupBase):
+    pass
+
+
+class GroupUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class Group(GroupBase):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class GroupWithFonts(Group):
+    fonts: List[Font] = []
+    font_ids: List[int] = []
+
+
+class GroupWithUsers(Group):
+    users: List[User] = []
+    user_ids: List[int] = []
+
+
+class GroupDetail(Group):
+    fonts: List[Font] = []
+    font_ids: List[int] = []
+    users: List[User] = []
+    user_ids: List[int] = []
+
+
+class GroupList(BaseModel):
+    items: List[Group]
+    total: int
+
+
+class GroupFontAssign(BaseModel):
+    font_ids: List[int]
+
+
+class GroupUserAssign(BaseModel):
+    user_ids: List[int]
+
+
+# ============= Font License Schemas =============
+
+class FontLicenseBase(BaseModel):
+    license_type: Optional[str] = None  # 'desktop', 'web', 'app', 'universal'
+    license_key: Optional[str] = None
+    seat_count: Optional[int] = None
+    expiry_date: Optional[date] = None
+    notes: Optional[str] = None
+
+
+class FontLicenseCreate(FontLicenseBase):
+    font_id: int
+
+
+class FontLicenseUpdate(FontLicenseBase):
+    pass
+
+
+class FontLicenseSchema(FontLicenseBase):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: int
+    font_id: int
+    filename_original: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class FontLicenseList(BaseModel):
+    items: List[FontLicenseSchema]
+    total: int

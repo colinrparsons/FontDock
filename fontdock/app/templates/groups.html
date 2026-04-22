@@ -1,0 +1,313 @@
+{% extends "base.html" %}
+
+{% block title %}Groups - FontDock{% endblock %}
+
+{% block content %}
+<script>
+const token = localStorage.getItem('token');
+if (!token) {
+    window.location.href = '/ui/login';
+}
+</script>
+
+<h2>User Groups</h2>
+<p class="text-muted">Groups control which fonts users can access. Assign fonts to groups, then assign users to groups to manage font licensing compliance.</p>
+
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <input type="text" class="search-box" placeholder="Search groups..." id="search" style="margin: 0; flex: 1; margin-right: 1rem;" oninput="filterGroups()">
+        <button class="btn" onclick="createGroup()">+ New Group</button>
+    </div>
+    
+    <table id="groups-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Users</th>
+                <th>Fonts</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="groups-body">
+        </tbody>
+    </table>
+    <p id="no-groups" style="color: #666; text-align: center; padding: 2rem; display: none;">No groups found. Create your first group.</p>
+</div>
+
+<!-- Group Detail Modal -->
+<div id="group-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
+    <div style="background: white; max-width: 900px; margin: 2rem auto; border-radius: 8px; padding: 1.5rem; max-height: 80vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3 id="modal-title">Group Details</h3>
+            <button class="btn" style="background: #666;" onclick="closeModal()">Close</button>
+        </div>
+        
+        <div id="modal-content"></div>
+    </div>
+</div>
+
+<script>
+let allGroups = [];
+
+async function loadGroups() {
+    const response = await fetch('/api/groups', {
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (response.status === 401) { location.href = '/ui/login'; return; }
+    const data = await response.json();
+    allGroups = data.items;
+    renderGroups(allGroups);
+}
+
+function renderGroups(groups) {
+    const tbody = document.getElementById('groups-body');
+    const noGroups = document.getElementById('no-groups');
+    
+    if (groups.length === 0) {
+        tbody.innerHTML = '';
+        noGroups.style.display = 'block';
+        return;
+    }
+    noGroups.style.display = 'none';
+    
+    tbody.innerHTML = groups.map(g => `
+        <tr>
+            <td><strong>${escapeHtml(g.name)}</strong></td>
+            <td>${escapeHtml(g.description || '-')}</td>
+            <td>${g.user_ids ? g.user_ids.length : 0}</td>
+            <td>${g.font_ids ? g.font_ids.length : 0}</td>
+            <td>
+                <span style="color: ${g.is_active ? 'green' : 'red'};">
+                    ${g.is_active ? 'Active' : 'Inactive'}
+                </span>
+            </td>
+            <td>
+                <button class="btn" onclick="viewGroup(${g.id})">Manage</button>
+                <button class="btn" style="background: #f59e0b;" onclick="editGroup(${g.id}, '${escapeHtml(g.name)}', '${escapeHtml(g.description || '')}')">Edit</button>
+                <button class="btn" style="background: #dc3545;" onclick="deleteGroup(${g.id}, '${escapeHtml(g.name)}')">Delete</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function filterGroups() {
+    const q = document.getElementById('search').value.toLowerCase();
+    const filtered = allGroups.filter(g => 
+        g.name.toLowerCase().includes(q) || 
+        (g.description || '').toLowerCase().includes(q)
+    );
+    renderGroups(filtered);
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function createGroup() {
+    const name = prompt('Group name:');
+    if (!name) return;
+    const description = prompt('Description (optional):');
+    
+    fetch('/api/groups', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({name: name, description: description || null})
+    }).then(r => {
+        if (r.ok) loadGroups();
+        else if (r.status === 401) location.href = '/ui/login';
+        else if (r.status === 403) alert('Admin access required');
+        else if (r.status === 409) alert('Group already exists');
+        else alert('Failed to create group');
+    });
+}
+
+function editGroup(id, currentName, currentDesc) {
+    const name = prompt('Group name:', currentName);
+    if (!name) return;
+    const description = prompt('Description:', currentDesc);
+    
+    fetch(`/api/groups/${id}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({name: name, description: description})
+    }).then(r => {
+        if (r.ok) loadGroups();
+        else if (r.status === 401) location.href = '/ui/login';
+        else if (r.status === 403) alert('Admin access required');
+        else alert('Failed to update group');
+    });
+}
+
+function deleteGroup(id, name) {
+    if (!confirm(`Delete group "${name}"? This will remove all font and user assignments.`)) return;
+    
+    fetch(`/api/groups/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+    }).then(r => {
+        if (r.ok) loadGroups();
+        else if (r.status === 401) location.href = '/ui/login';
+        else if (r.status === 403) alert('Admin access required');
+        else alert('Failed to delete group');
+    });
+}
+
+async function viewGroup(id) {
+    const response = await fetch(`/api/groups/${id}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) { alert('Failed to load group'); return; }
+    const group = await response.json();
+    
+    document.getElementById('modal-title').textContent = group.name;
+    
+    // Load all fonts and users for assignment dropdowns
+    const [fontsRes, usersRes] = await Promise.all([
+        fetch('/api/fonts?limit=10000', { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch('/api/users', { headers: { 'Authorization': `Bearer ${token}` } })
+    ]);
+    const fontsData = await fontsRes.json();
+    const usersData = await usersRes.json();
+    
+    const assignedFontIds = new Set(group.font_ids || []);
+    const assignedUserIds = new Set(group.user_ids || []);
+    
+    const unassignedFonts = fontsData.items.filter(f => !assignedFontIds.has(f.id));
+    const unassignedUsers = usersData.items.filter(u => !assignedUserIds.has(u.id));
+    
+    document.getElementById('modal-content').innerHTML = `
+        <p class="text-muted">${escapeHtml(group.description || 'No description')}</p>
+        
+        <h3>Assigned Fonts (${group.font_ids ? group.font_ids.length : 0})</h3>
+        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
+            <select id="add-font-select" style="flex: 1;">
+                <option value="">Select font to add...</option>
+                ${unassignedFonts.map(f => `<option value="${f.id}">${escapeHtml(f.family_name || 'Unknown')} - ${escapeHtml(f.style_name || '')} (${f.id})</option>`).join('')}
+            </select>
+            <button class="btn" onclick="addFontToGroup(${group.id})">Add Font</button>
+        </div>
+        <div id="group-fonts-list" style="max-height: 200px; overflow-y: auto;">
+            ${(group.fonts || []).map(f => `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.25rem 0; border-bottom: 1px solid #eee;">
+                    <span>${escapeHtml(f.family_name || 'Unknown')} - ${escapeHtml(f.style_name || '')}</span>
+                    <button class="btn" style="background: #dc3545; font-size: 12px; min-height: 28px; padding: 0.25rem 0.5rem;" onclick="removeFontFromGroup(${group.id}, ${f.id})">Remove</button>
+                </div>
+            `).join('') || '<p class="text-muted">No fonts assigned</p>'}
+        </div>
+        
+        <h3 style="margin-top: 1.5rem;">Assigned Users (${group.user_ids ? group.user_ids.length : 0})</h3>
+        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
+            <select id="add-user-select" style="flex: 1;">
+                <option value="">Select user to add...</option>
+                ${unassignedUsers.map(u => `<option value="${u.id}">${escapeHtml(u.username)} (${escapeHtml(u.email || '')})</option>`).join('')}
+            </select>
+            <button class="btn" onclick="addUserToGroup(${group.id})">Add User</button>
+        </div>
+        <div id="group-users-list" style="max-height: 200px; overflow-y: auto;">
+            ${(group.users || []).map(u => `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.25rem 0; border-bottom: 1px solid #eee;">
+                    <span>${escapeHtml(u.username)} ${u.is_admin ? '<span style="color: #f59e0b;">(admin)</span>' : ''}</span>
+                    <button class="btn" style="background: #dc3545; font-size: 12px; min-height: 28px; padding: 0.25rem 0.5rem;" onclick="removeUserFromGroup(${group.id}, ${u.id})">Remove</button>
+                </div>
+            `).join('') || '<p class="text-muted">No users assigned</p>'}
+        </div>
+    `;
+    
+    document.getElementById('group-modal').style.display = 'block';
+}
+
+function closeModal() {
+    document.getElementById('group-modal').style.display = 'none';
+}
+
+async function addFontToGroup(groupId) {
+    const select = document.getElementById('add-font-select');
+    const fontId = parseInt(select.value);
+    if (!fontId) return;
+    
+    const response = await fetch(`/api/groups/${groupId}/fonts`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({font_ids: [fontId]})
+    });
+    
+    if (response.ok) {
+        viewGroup(groupId); // Refresh modal
+        loadGroups(); // Refresh table
+    } else {
+        alert('Failed to add font to group');
+    }
+}
+
+async function removeFontFromGroup(groupId, fontId) {
+    const response = await fetch(`/api/groups/${groupId}/fonts/${fontId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (response.ok) {
+        viewGroup(groupId); // Refresh modal
+        loadGroups(); // Refresh table
+    } else {
+        alert('Failed to remove font from group');
+    }
+}
+
+async function addUserToGroup(groupId) {
+    const select = document.getElementById('add-user-select');
+    const userId = parseInt(select.value);
+    if (!userId) return;
+    
+    const response = await fetch(`/api/groups/${groupId}/users`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({user_ids: [userId]})
+    });
+    
+    if (response.ok) {
+        viewGroup(groupId); // Refresh modal
+        loadGroups(); // Refresh table
+    } else {
+        alert('Failed to add user to group');
+    }
+}
+
+async function removeUserFromGroup(groupId, userId) {
+    const response = await fetch(`/api/groups/${groupId}/users/${userId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (response.ok) {
+        viewGroup(groupId); // Refresh modal
+        loadGroups(); // Refresh table
+    } else {
+        alert('Failed to remove user from group');
+    }
+}
+
+// Close modal on outside click
+document.getElementById('group-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+});
+
+// Load on page load
+loadGroups();
+</script>
+{% endblock %}

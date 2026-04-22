@@ -19,7 +19,7 @@ from app.schemas import (
     FontUploadResponse,
     FontWithFamily,
 )
-from app.models import User, Font as FontModel, Collection
+from app.models import User, Font as FontModel, Collection, Group as GroupModel
 from app.routers.auth import get_current_user, get_current_admin
 from app.services.font_ingest_service import ingest_font, normalize_family_name
 from app.services.font_search_service import search_fonts
@@ -89,9 +89,22 @@ async def list_fonts(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List fonts with optional filtering and search."""
+    """List fonts with optional filtering and search.
+    Non-admin users only see fonts assigned to their groups.
+    Admins see all fonts."""
     # Build query with family join
     query = db.query(FontModel).options(joinedload(FontModel.family))
+    
+    # Group-based access control: non-admin users only see fonts from their groups
+    if not current_user.is_admin:
+        user_group_font_ids = (
+            db.query(FontModel.id)
+            .join(FontModel.groups)
+            .join(GroupModel.users)
+            .filter(User.id == current_user.id)
+            .subquery()
+        )
+        query = query.filter(FontModel.id.in_(user_group_font_ids))
     
     if family_id:
         query = query.filter(FontModel.family_id == family_id)
@@ -133,6 +146,7 @@ async def list_fonts(
             "family_id": font.family_id,
             "family_name": font.family.name if font.family else None,
             "client_ids": [client.id for client in font.clients],
+            "group_ids": [group.id for group in font.groups],
             "extension": font.extension,
             "created_at": font.created_at,
             "updated_at": font.updated_at,
@@ -148,7 +162,8 @@ async def get_font(
     current_user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Get font details by ID."""
+    """Get font details by ID.
+    Non-admin users can only access fonts from their groups."""
     from app.models import Font as FontModel
     
     font = db.query(FontModel).filter(FontModel.id == font_id).first()
@@ -157,6 +172,16 @@ async def get_font(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Font not found",
         )
+    
+    # Group access check for non-admin users
+    if not current_user.is_admin:
+        font_group_ids = {g.id for g in font.groups}
+        user_group_ids = {g.id for g in current_user.groups}
+        if not font_group_ids.intersection(user_group_ids):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this font",
+            )
     
     return font
 
@@ -282,6 +307,16 @@ async def download_font(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Font is not active",
         )
+    
+    # Group access check for non-admin users
+    if not current_user.is_admin:
+        font_group_ids = {g.id for g in font.groups}
+        user_group_ids = {g.id for g in current_user.groups}
+        if not font_group_ids.intersection(user_group_ids):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this font",
+            )
     
     file_path = Path(font.storage_path)
     if not file_path.exists():

@@ -137,3 +137,21 @@ class FontDockAPI:
         )
         response.raise_for_status()
         return response.content
+    
+    def get_groups(self):
+        """Fetch groups the current user belongs to."""
+        logger.info("Fetching groups")
+        try:
+            response = requests.get(
+                f"{self.server_url}/api/groups",
+                headers=self.get_headers()
+            )
+            response.raise_for_status()
+            data = response.json()
+            logger.info(f"Fetched {len(data.get('items', []))} groups")
+            return data
+        except Exception as e:
+            logger.error(f"Failed to fetch groups: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response content: {e.response.text}")
+            raise

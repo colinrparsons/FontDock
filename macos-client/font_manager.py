@@ -273,10 +273,21 @@ class FontManager:
             else:
                 logger.info("No clients to sync")
             
+            logger.info("Fetching groups...")
+            try:
+                groups_response = self.api.get_groups()
+                groups_data = groups_response.get('items', [])
+                logger.info(f"Syncing {len(groups_data)} groups to database")
+                self.db.sync_groups(groups_data)
+            except Exception as e:
+                logger.warning(f"Failed to sync groups (non-critical): {e}")
+                groups_data = []
+            
             result = {
                 'fonts': len(fonts_data.get('items', [])),
                 'collections': len(collections_data),
-                'clients': len(clients_data)
+                'clients': len(clients_data),
+                'groups': len(groups_data)
             }
             logger.info(f"Metadata sync complete: {result}")
             return result

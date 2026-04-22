@@ -66,6 +66,24 @@ class LocalDatabase:
             )
         """)
         
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS groups (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                description TEXT,
+                is_active BOOLEAN DEFAULT 1,
+                last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS group_fonts (
+                group_id INTEGER,
+                font_id INTEGER,
+                PRIMARY KEY (group_id, font_id)
+            )
+        """)
+        
         conn.commit()
         conn.close()
     
@@ -119,6 +137,16 @@ class LocalDatabase:
                 font.get('file_hash_sha256'),
                 font.get('id')
             ))
+        
+        # Sync group-font relationships from font data
+        cursor.execute("DELETE FROM group_fonts")
+        for font in fonts:
+            group_ids = font.get('group_ids', [])
+            for gid in group_ids:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO group_fonts (group_id, font_id)
+                    VALUES (?, ?)
+                """, (gid, font.get('id')))
         
         # Delete fonts that no longer exist on server
         if server_font_ids:
@@ -455,6 +483,56 @@ class LocalDatabase:
             LIMIT ?
         """, (limit,))
         
+        columns = [desc[0] for desc in cursor.description]
+        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+        conn.close()
+        return results
+    
+    def sync_groups(self, groups):
+        """Sync groups from server to local DB."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        server_group_ids = [g.get('id') for g in groups if isinstance(g, dict) and g.get('id')]
+        
+        for group in groups:
+            if isinstance(group, dict):
+                cursor.execute("""
+                    INSERT OR REPLACE INTO groups 
+                    (id, name, description, is_active, last_synced)
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, (
+                    group.get('id'),
+                    group.get('name'),
+                    group.get('description'),
+                    1 if group.get('is_active', True) else 0
+                ))
+        
+        # Delete groups that no longer exist on server
+        if server_group_ids:
+            placeholders = ','.join('?' * len(server_group_ids))
+            cursor.execute(f"""
+                DELETE FROM groups 
+                WHERE id NOT IN ({placeholders})
+            """, server_group_ids)
+            cursor.execute(f"""
+                DELETE FROM group_fonts 
+                WHERE group_id NOT IN ({placeholders})
+            """, server_group_ids)
+        else:
+            cursor.execute("DELETE FROM groups")
+            cursor.execute("DELETE FROM group_fonts")
+        
+        conn.commit()
+        conn.close()
+    
+    def get_all_groups(self):
+        """Get all groups from local DB."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM groups ORDER BY name")
         columns = [desc[0] for desc in cursor.description]
         results = [dict(zip(columns, row)) for row in cursor.fetchall()]
         

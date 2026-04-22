@@ -52,6 +52,7 @@ if (!token) {
                             {% else %}-{% endif %}
                         </span>
                         <a href="#" class="btn" onclick="event.stopPropagation(); downloadFont('{{ font.id }}');">Download</a>
+                        <a href="#" class="btn" style="background: #6366f1;" onclick="event.stopPropagation(); manageLicense('{{ font.id }}');">License</a>
                         <a href="#" class="btn" style="background: #dc3545;" onclick="event.stopPropagation(); deleteFont('{{ font.id }}');">Delete</a>
                     </div>
                 </div>
@@ -370,6 +371,122 @@ document.getElementById('filter-format').addEventListener('change', (e) => {
             row.classList.add('hidden');
         }
     });
+});
+
+// License management
+async function manageLicense(fontId) {
+    const response = await fetch(`/api/fonts/${fontId}/licenses`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) { alert('Failed to load licenses'); return; }
+    const data = await response.json();
+    
+    const fontInfo = fontData[fontId] || {};
+    const modal = document.getElementById('license-modal');
+    document.getElementById('license-modal-title').textContent = `Licenses: ${fontInfo.family || 'Font'} ${fontInfo.style || ''}`;
+    
+    let html = `
+        <div style="margin-bottom: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 4px;">
+            <h4>Upload New License</h4>
+            <form id="license-upload-form" enctype="multipart/form-data" style="display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: end;">
+                <div class="form-group" style="flex: 1; min-width: 200px; margin: 0;">
+                    <label>License File</label>
+                    <input type="file" id="license-file" name="file" required>
+                </div>
+                <div class="form-group" style="min-width: 120px; margin: 0;">
+                    <label>Type</label>
+                    <select id="license-type" name="license_type">
+                        <option value="desktop">Desktop</option>
+                        <option value="web">Web</option>
+                        <option value="app">App</option>
+                        <option value="universal">Universal</option>
+                    </select>
+                </div>
+                <div class="form-group" style="min-width: 80px; margin: 0;">
+                    <label>Seats</label>
+                    <input type="number" id="license-seats" name="seat_count" min="1" placeholder="Unlimited">
+                </div>
+                <div class="form-group" style="min-width: 120px; margin: 0;">
+                    <label>Expiry</label>
+                    <input type="date" id="license-expiry" name="expiry_date">
+                </div>
+                <button type="submit" class="btn" style="background: #6366f1;">Upload</button>
+            </form>
+        </div>
+    `;
+    
+    if (data.items.length === 0) {
+        html += '<p class="text-muted" style="text-align: center; padding: 1rem;">No licenses on file for this font.</p>';
+    } else {
+        html += '<table><thead><tr><th>Type</th><th>File</th><th>Seats</th><th>Expiry</th><th>Actions</th></tr></thead><tbody>';
+        for (const lic of data.items) {
+            const expiryStr = lic.expiry_date ? new Date(lic.expiry_date).toLocaleDateString() : 'Never';
+            const isExpired = lic.expiry_date && new Date(lic.expiry_date) < new Date();
+            html += `
+                <tr>
+                    <td><span style="background: #e0e7ff; color: #4338ca; padding: 2px 8px; border-radius: 4px; font-size: 12px;">${lic.license_type || 'N/A'}</span></td>
+                    <td>${lic.filename_original || 'N/A'}</td>
+                    <td>${lic.seat_count || 'Unlimited'}</td>
+                    <td style="color: ${isExpired ? 'red' : 'green'};">${expiryStr}${isExpired ? ' (expired)' : ''}</td>
+                    <td>
+                        <a href="/api/fonts/${fontId}/licenses/${lic.id}/download" class="btn" style="font-size: 12px;">Download</a>
+                        <button class="btn" style="background: #dc3545; font-size: 12px;" onclick="deleteLicense(${fontId}, ${lic.id})">Delete</button>
+                    </td>
+                </tr>
+            `;
+        }
+        html += '</tbody></table>';
+    }
+    
+    document.getElementById('license-modal-content').innerHTML = html;
+    modal.style.display = 'block';
+    
+    // Handle upload form
+    document.getElementById('license-upload-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const uploadRes = await fetch(`/api/fonts/${fontId}/licenses`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+            body: formData
+        });
+        if (uploadRes.ok) {
+            manageLicense(fontId); // Refresh
+        } else {
+            const err = await uploadRes.json();
+            alert('Upload failed: ' + (err.detail || 'Unknown error'));
+        }
+    };
+}
+
+async function deleteLicense(fontId, licenseId) {
+    if (!confirm('Delete this license?')) return;
+    const response = await fetch(`/api/fonts/${fontId}/licenses/${licenseId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (response.ok) {
+        manageLicense(fontId); // Refresh
+    } else {
+        alert('Failed to delete license');
+    }
+}
+</script>
+
+<!-- License Modal -->
+<div id="license-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
+    <div style="background: white; max-width: 800px; margin: 2rem auto; border-radius: 8px; padding: 1.5rem; max-height: 80vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3 id="license-modal-title">Font Licenses</h3>
+            <button class="btn" style="background: #666;" onclick="document.getElementById('license-modal').style.display='none'">Close</button>
+        </div>
+        <div id="license-modal-content"></div>
+    </div>
+</div>
+
+<script>
+document.getElementById('license-modal').addEventListener('click', function(e) {
+    if (e.target === this) this.style.display = 'none';
 });
 </script>
 {% endblock %}

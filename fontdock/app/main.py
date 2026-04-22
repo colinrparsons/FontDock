@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.db import engine, Base, get_db
 from app.config import get_settings
-from app.routers import auth, fonts, collections, clients, users, admin as admin_router, import_batch, change_password
+from app.routers import auth, fonts, collections, clients, users, admin as admin_router, import_batch, change_password, groups, licenses
 from app.routers.auth import get_current_user, get_current_admin
 from app.logging_config import setup_logging
 
@@ -76,6 +76,8 @@ def create_app() -> FastAPI:
     app.include_router(admin_router.router)
     app.include_router(import_batch.router)
     app.include_router(change_password.router)
+    app.include_router(groups.router)
+    app.include_router(licenses.router)
     
     # Mount static files (for images, CSS, JS)
     static_dir = Path(__file__).parent / "static"
@@ -339,6 +341,18 @@ def create_app() -> FastAPI:
             return HTMLResponse(content=html)
         except Exception as e:
             logger.error(f"Users page error: {e}", exc_info=True)
+            return HTMLResponse(content=f"<h1>Error: {e}</h1><pre>{traceback.format_exc()}</pre>", status_code=500)
+    
+    @app.get("/ui/groups", response_class=HTMLResponse)
+    async def groups_page(
+        request: Request,
+        db: Session = Depends(get_db),
+    ):
+        try:
+            html = render_template("groups.html", request=request)
+            return HTMLResponse(content=html)
+        except Exception as e:
+            logger.error(f"Groups page error: {e}", exc_info=True)
             return HTMLResponse(content=f"<h1>Error: {e}</h1><pre>{traceback.format_exc()}</pre>", status_code=500)
     
     @app.get("/ui/permissions", response_class=HTMLResponse)

@@ -1,6 +1,6 @@
 """SQLAlchemy models for FontDock."""
 import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Table, Text, Float
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Table, Text, Float, Date
 from sqlalchemy.orm import relationship
 
 from app.db import Base
@@ -33,6 +33,24 @@ client_fonts = Table(
     Column("added_at", DateTime, default=datetime.datetime.utcnow),
 )
 
+group_fonts = Table(
+    "group_fonts",
+    Base.metadata,
+    Column("id", Integer, primary_key=True, index=True),
+    Column("group_id", Integer, ForeignKey("groups.id"), nullable=False),
+    Column("font_id", Integer, ForeignKey("fonts.id"), nullable=False),
+    Column("added_at", DateTime, default=datetime.datetime.utcnow),
+)
+
+user_groups = Table(
+    "user_groups",
+    Base.metadata,
+    Column("id", Integer, primary_key=True, index=True),
+    Column("user_id", Integer, ForeignKey("users.id"), nullable=False),
+    Column("group_id", Integer, ForeignKey("groups.id"), nullable=False),
+    Column("added_at", DateTime, default=datetime.datetime.utcnow),
+)
+
 
 class User(Base):
     """User account."""
@@ -62,6 +80,7 @@ class User(Base):
     usage_events = relationship("FontUsageEvent", back_populates="user")
     audit_events = relationship("AuditEvent", back_populates="user")
     sessions = relationship("UserSession", back_populates="user")
+    groups = relationship("Group", secondary=user_groups, back_populates="users")
 
 
 class Client(Base):
@@ -158,8 +177,10 @@ class Font(Base):
     family = relationship("FontFamily", back_populates="fonts")
     clients = relationship("Client", secondary=client_fonts, back_populates="fonts")
     collections = relationship("Collection", secondary=collection_fonts, back_populates="fonts")
+    groups = relationship("Group", secondary=group_fonts, back_populates="fonts")
     aliases = relationship("FontAlias", back_populates="font")
     usage_events = relationship("FontUsageEvent", back_populates="font")
+    licenses = relationship("FontLicense", back_populates="font")
 
 
 class FontAlias(Base):
@@ -227,6 +248,43 @@ class AuditEvent(Base):
     
     # Relationships
     user = relationship("User", back_populates="audit_events")
+
+
+class Group(Base):
+    """User group for font access control."""
+    __tablename__ = "groups"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False, index=True)
+    description = Column(Text)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    
+    # Relationships
+    users = relationship("User", secondary=user_groups, back_populates="groups")
+    fonts = relationship("Font", secondary=group_fonts, back_populates="groups")
+
+
+class FontLicense(Base):
+    """License file/metadata attached to a font."""
+    __tablename__ = "font_licenses"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    font_id = Column(Integer, ForeignKey("fonts.id"), nullable=False, index=True)
+    license_type = Column(String)  # e.g., 'desktop', 'web', 'app', 'universal'
+    license_key = Column(Text)  # Optional license key text
+    seat_count = Column(Integer)  # Number of licensed seats
+    expiry_date = Column(Date)  # License expiry date
+    notes = Column(Text)
+    filename_original = Column(String)  # Original uploaded filename
+    filename_storage = Column(String, nullable=False)  # Storage filename
+    storage_path = Column(String, nullable=False)  # Full storage path
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    
+    # Relationships
+    font = relationship("Font", back_populates="licenses")
 
 
 class UserSession(Base):

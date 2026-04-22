@@ -2860,7 +2860,7 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(f"Synced {result['fonts']} fonts. Downloading...")
             self.download_all_fonts()
         else:
-            self.status_bar.showMessage(f"Sync complete: {result['fonts']} fonts, {result['collections']} collections, {result['clients']} clients", 3000)
+            self.status_bar.showMessage(f"Sync complete: {result['fonts']} fonts, {result['collections']} collections, {result['clients']} clients, {result.get('groups', 0)} groups", 3000)
             self.sync_button.setEnabled(True)
     
     def on_sync_error(self, error):
