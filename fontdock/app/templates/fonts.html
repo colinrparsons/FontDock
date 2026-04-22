@@ -436,18 +436,20 @@ async function manageLicense(fontId) {
     if (data.items.length === 0) {
         html += '<p class="text-muted" style="text-align: center; padding: 1rem;">No licenses on file for this font.</p>';
     } else {
-        html += '<table><thead><tr><th>Type</th><th>File</th><th>Seats</th><th>Expiry</th><th>Actions</th></tr></thead><tbody>';
+        html += '<table><thead><tr><th>Type</th><th>File</th><th>Seats</th><th>Expiry</th><th>Notes</th><th>Actions</th></tr></thead><tbody>';
         for (const lic of data.items) {
             const expiryStr = lic.expiry_date ? new Date(lic.expiry_date).toLocaleDateString() : 'Never';
             const isExpired = lic.expiry_date && new Date(lic.expiry_date) < new Date();
             html += `
-                <tr>
-                    <td><span style="background: #e0e7ff; color: #4338ca; padding: 2px 8px; border-radius: 4px; font-size: 12px;">${lic.license_type || 'N/A'}</span></td>
+                <tr id="lic-row-${lic.id}">
+                    <td id="lic-type-${lic.id}"><span style="background: #e0e7ff; color: #4338ca; padding: 2px 8px; border-radius: 4px; font-size: 12px;">${lic.license_type || 'N/A'}</span></td>
                     <td>${lic.filename_original || 'N/A'}</td>
-                    <td>${lic.seat_count || 'Unlimited'}</td>
+                    <td id="lic-seats-${lic.id}">${lic.seat_count || 'Unlimited'}</td>
                     <td style="color: ${isExpired ? 'red' : 'green'};">${expiryStr}${isExpired ? ' (expired)' : ''}</td>
+                    <td id="lic-notes-${lic.id}" style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(lic.notes || '')}">${escapeHtml(lic.notes || '-')}</td>
                     <td>
                         <a href="/api/fonts/${fontId}/licenses/${lic.id}/download" class="btn" style="font-size: 12px;">Download</a>
+                        <button class="btn" style="background: #f59e0b; font-size: 12px;" onclick="editLicense(${fontId}, ${lic.id}, '${lic.license_type || ''}', ${lic.seat_count || 'null'}, '${lic.expiry_date || ''}', '${escapeHtml(lic.notes || '').replace(/'/g, "\\'")}')">Edit</button>
                         <button class="btn" style="background: #dc3545; font-size: 12px;" onclick="deleteLicense(${fontId}, ${lic.id})">Delete</button>
                     </td>
                 </tr>
@@ -487,6 +489,68 @@ async function deleteLicense(fontId, licenseId) {
         manageLicense(fontId); // Refresh
     } else {
         alert('Failed to delete license');
+    }
+}
+
+function editLicense(fontId, licenseId, currentType, currentSeats, currentExpiry, currentNotes) {
+    const row = document.getElementById(`lic-row-${licenseId}`);
+    if (!row) return;
+    
+    const typeCell = document.getElementById(`lic-type-${licenseId}`);
+    const seatsCell = document.getElementById(`lic-seats-${licenseId}`);
+    const notesCell = document.getElementById(`lic-notes-${licenseId}`);
+    
+    // Replace cells with input fields
+    typeCell.innerHTML = `<select id="edit-type-${licenseId}" style="font-size: 12px; padding: 2px;">
+        <option value="desktop" ${currentType === 'desktop' ? 'selected' : ''}>Desktop</option>
+        <option value="web" ${currentType === 'web' ? 'selected' : ''}>Web</option>
+        <option value="app" ${currentType === 'app' ? 'selected' : ''}>App</option>
+        <option value="universal" ${currentType === 'universal' ? 'selected' : ''}>Universal</option>
+    </select>`;
+    
+    seatsCell.innerHTML = `<input type="number" id="edit-seats-${licenseId}" value="${currentSeats || ''}" min="1" placeholder="Unlimited" style="width: 70px; font-size: 12px; padding: 2px;">`;
+    
+    notesCell.innerHTML = `<input type="text" id="edit-notes-${licenseId}" value="${currentNotes.replace(/"/g, '&quot;')}" placeholder="Notes" style="width: 140px; font-size: 12px; padding: 2px;">`;
+    
+    // Replace Edit button with Save/Cancel
+    const actionsCell = row.querySelector('td:last-child');
+    const downloadBtn = actionsCell.querySelector('a');
+    actionsCell.innerHTML = '';
+    actionsCell.appendChild(downloadBtn);
+    actionsCell.innerHTML += `
+        <button class="btn" style="background: #28a745; font-size: 12px;" onclick="saveLicense(${fontId}, ${licenseId})">Save</button>
+        <button class="btn" style="background: #6c757d; font-size: 12px;" onclick="manageLicense(${fontId})">Cancel</button>
+    `;
+}
+
+async function saveLicense(fontId, licenseId) {
+    const type = document.getElementById(`edit-type-${licenseId}`).value;
+    const seatsInput = document.getElementById(`edit-seats-${licenseId}`);
+    const notesInput = document.getElementById(`edit-notes-${licenseId}`);
+    
+    const body = {
+        license_type: type,
+        notes: notesInput.value || null
+    };
+    
+    const seatsVal = seatsInput.value;
+    if (seatsVal) body.seat_count = parseInt(seatsVal);
+    else body.seat_count = null;
+    
+    const response = await fetch(`/api/fonts/${fontId}/licenses/${licenseId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(body)
+    });
+    
+    if (response.ok) {
+        manageLicense(fontId); // Refresh
+    } else {
+        const err = await response.json();
+        alert('Failed to update license: ' + (err.detail || 'Unknown error'));
     }
 }
 </script>
