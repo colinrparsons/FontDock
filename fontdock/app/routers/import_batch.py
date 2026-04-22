@@ -305,6 +305,10 @@ async def batch_import_from_folder(
                     logger.info(f"[BATCH IMPORT] Attached license {lic_info['filename']} to font {font.postscript_name or font.filename_original}")
                 except Exception as e:
                     logger.warning(f"[BATCH IMPORT] Failed to attach license {lic_info['filename']}: {e}")
+            
+            # Commit any license attachments for this font
+            if licenses_by_folder.get(font_info.get('folder', os.path.dirname(font_info['path']))):
+                db.commit()
                 
         except Exception as e:
             results['failed'] += 1
