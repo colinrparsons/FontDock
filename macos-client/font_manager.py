@@ -20,6 +20,26 @@ class FontManager:
     def __init__(self, api_client: FontDockAPI, db: LocalDatabase):
         self.api = api_client
         self.db = db
+        self._user_permissions = None
+    
+    def fetch_user_permissions(self):
+        """Fetch current user's permissions from server."""
+        try:
+            user_data = self.api.get_me()
+            self._user_permissions = user_data
+            logger.info(f"User permissions loaded for: {user_data.get('username')}")
+            return user_data
+        except Exception as e:
+            logger.warning(f"Failed to fetch user permissions: {e}")
+            return None
+    
+    def has_permission(self, perm_name):
+        """Check if user has a specific permission. Admins always have all permissions."""
+        if not self._user_permissions:
+            return True  # If unknown, allow (will be filtered server-side)
+        if self._user_permissions.get('is_admin', False):
+            return True
+        return self._user_permissions.get(perm_name, False)
     
     def download_font(self, font_id):
         font = self.db.get_font_by_id(font_id)
@@ -236,42 +256,57 @@ class FontManager:
     def sync_metadata(self):
         logger.info("Starting metadata sync")
         try:
+            # Fetch user permissions first
+            self.fetch_user_permissions()
+            
             logger.info("Fetching fonts...")
             fonts_data = self.api.get_fonts()
             logger.info(f"Syncing {len(fonts_data.get('items', []))} fonts to database")
             self.db.sync_fonts(fonts_data.get('items', []))
             
-            logger.info("Fetching collections...")
-            collections_response = self.api.get_collections()
-            collections_data = collections_response.get('items', [])
-            logger.debug(f"Collections count: {len(collections_data)}")
-            
-            if len(collections_data) > 0:
-                logger.info(f"Syncing {len(collections_data)} collections to database")
-                self.db.sync_collections(collections_data)
+            # Only sync collections if user has permission
+            collections_data = []
+            if self.has_permission('can_create_collections'):
+                logger.info("Fetching collections...")
+                collections_response = self.api.get_collections()
+                collections_data = collections_response.get('items', [])
+                logger.debug(f"Collections count: {len(collections_data)}")
                 
-                logger.info("Fetching collection fonts...")
-                for collection in collections_data:
-                    logger.debug(f"Fetching fonts for collection {collection.get('id')}: {collection.get('name')}")
-                    try:
-                        collection_fonts = self.api.get_collection_fonts(collection['id'])
-                        font_ids = [f['id'] for f in collection_fonts]
-                        self.db.sync_collection_fonts(collection['id'], font_ids)
-                    except Exception as e:
-                        logger.warning(f"Failed to fetch fonts for collection {collection.get('id')}: {e}")
+                if len(collections_data) > 0:
+                    logger.info(f"Syncing {len(collections_data)} collections to database")
+                    self.db.sync_collections(collections_data)
+                    
+                    logger.info("Fetching collection fonts...")
+                    for collection in collections_data:
+                        logger.debug(f"Fetching fonts for collection {collection.get('id')}: {collection.get('name')}")
+                        try:
+                            collection_fonts = self.api.get_collection_fonts(collection['id'])
+                            font_ids = [f['id'] for f in collection_fonts]
+                            self.db.sync_collection_fonts(collection['id'], font_ids)
+                        except Exception as e:
+                            logger.warning(f"Failed to fetch fonts for collection {collection.get('id')}: {e}")
+                else:
+                    logger.info("No collections to sync")
             else:
-                logger.info("No collections to sync")
+                logger.info("Skipping collections - user lacks permission")
+                self.db.sync_collections([])  # Clear local collections
             
-            logger.info("Fetching clients...")
-            clients_response = self.api.get_clients()
-            clients_data = clients_response.get('items', [])
-            logger.debug(f"Clients count: {len(clients_data)}")
-            
-            if len(clients_data) > 0:
-                logger.info(f"Syncing {len(clients_data)} clients to database")
-                self.db.sync_clients(clients_data)
+            # Only sync clients if user has permission
+            clients_data = []
+            if self.has_permission('can_create_clients'):
+                logger.info("Fetching clients...")
+                clients_response = self.api.get_clients()
+                clients_data = clients_response.get('items', [])
+                logger.debug(f"Clients count: {len(clients_data)}")
+                
+                if len(clients_data) > 0:
+                    logger.info(f"Syncing {len(clients_data)} clients to database")
+                    self.db.sync_clients(clients_data)
+                else:
+                    logger.info("No clients to sync")
             else:
-                logger.info("No clients to sync")
+                logger.info("Skipping clients - user lacks permission")
+                self.db.sync_clients([])  # Clear local clients
             
             logger.info("Fetching groups...")
             try:

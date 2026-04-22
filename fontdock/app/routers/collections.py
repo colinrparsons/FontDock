@@ -41,6 +41,8 @@ async def list_collections(
     db: Session = Depends(get_db),
 ):
     """List collections with optional client filter."""
+    if not current_user.is_admin and not current_user.can_create_collections:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No permission to view collections")
     from app.models import Collection as CollectionModel
     
     query = db.query(CollectionModel)

@@ -27,6 +27,8 @@ async def list_clients(
     db: Session = Depends(get_db),
 ):
     """List clients."""
+    if not current_user.is_admin and not current_user.can_create_clients:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No permission to view clients")
     from app.models import Client as ClientModel
     
     query = db.query(ClientModel)
