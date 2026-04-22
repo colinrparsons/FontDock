@@ -171,13 +171,15 @@ async function viewGroup(id) {
     
     document.getElementById('modal-title').textContent = group.name;
     
-    // Load all fonts and users for assignment dropdowns
-    const [fontsRes, usersRes] = await Promise.all([
+    // Load all fonts, users, clients, and families for assignment dropdowns
+    const [fontsRes, usersRes, clientsRes] = await Promise.all([
         fetch('/api/fonts?limit=10000', { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch('/api/users', { headers: { 'Authorization': `Bearer ${token}` } })
+        fetch('/api/users', { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch('/api/clients', { headers: { 'Authorization': `Bearer ${token}` } })
     ]);
     const fontsData = await fontsRes.json();
     const usersData = await usersRes.json();
+    const clientsData = await clientsRes.json();
     
     const assignedFontIds = new Set(group.font_ids || []);
     const assignedUserIds = new Set(group.user_ids || []);
@@ -185,21 +187,48 @@ async function viewGroup(id) {
     const unassignedFonts = fontsData.items.filter(f => !assignedFontIds.has(f.id));
     const unassignedUsers = usersData.items.filter(u => !assignedUserIds.has(u.id));
     
+    // Build unique families list from fonts
+    const familiesMap = new Map();
+    for (const f of fontsData.items) {
+        if (f.family_id && f.family_name && !familiesMap.has(f.family_id)) {
+            familiesMap.set(f.family_id, f.family_name);
+        }
+    }
+    const families = Array.from(familiesMap.entries()).map(([id, name]) => ({id, name}));
+    
     document.getElementById('modal-content').innerHTML = `
         <p class="text-muted">${escapeHtml(group.description || 'No description')}</p>
         
         <h3>Assigned Fonts (${group.font_ids ? group.font_ids.length : 0})</h3>
+        
+        <!-- Bulk assign options -->
+        <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap;">
+            <select id="add-client-select" style="flex: 1; min-width: 150px;">
+                <option value="">Add all fonts from client...</option>
+                ${clientsData.items.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}
+            </select>
+            <button class="btn" style="background: #17a2b8;" onclick="addClientFontsToGroup(${group.id})">Add Client Fonts</button>
+            
+            <select id="add-family-select" style="flex: 1; min-width: 150px;">
+                <option value="">Add complete family...</option>
+                ${families.map(f => `<option value="${f.id}">${escapeHtml(f.name)}</option>`).join('')}
+            </select>
+            <button class="btn" style="background: #17a2b8;" onclick="addFamilyFontsToGroup(${group.id})">Add Family</button>
+        </div>
+        
+        <!-- Single font assign -->
         <div style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
             <select id="add-font-select" style="flex: 1;">
-                <option value="">Select font to add...</option>
-                ${unassignedFonts.map(f => `<option value="${f.id}">${escapeHtml(f.family_name || 'Unknown')} - ${escapeHtml(f.style_name || '')} (${f.id})</option>`).join('')}
+                <option value="">Select individual font to add...</option>
+                ${unassignedFonts.map(f => `<option value="${f.id}">${escapeHtml(f.family_name || 'Unknown')} - ${escapeHtml(f.style_name || '')}</option>`).join('')}
             </select>
             <button class="btn" onclick="addFontToGroup(${group.id})">Add Font</button>
         </div>
-        <div id="group-fonts-list" style="max-height: 200px; overflow-y: auto;">
+        
+        <div id="group-fonts-list" style="max-height: 250px; overflow-y: auto;">
             ${(group.fonts || []).map(f => `
                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 0.25rem 0; border-bottom: 1px solid #eee;">
-                    <span>${escapeHtml(f.family_name || 'Unknown')} - ${escapeHtml(f.style_name || '')}</span>
+                    <span>${escapeHtml(f.family_name || f.full_name || f.postscript_name || 'Unknown')} - ${escapeHtml(f.style_name || '')}</span>
                     <button class="btn" style="background: #dc3545; font-size: 12px; min-height: 28px; padding: 0.25rem 0.5rem;" onclick="removeFontFromGroup(${group.id}, ${f.id})">Remove</button>
                 </div>
             `).join('') || '<p class="text-muted">No fonts assigned</p>'}
@@ -249,6 +278,44 @@ async function addFontToGroup(groupId) {
         loadGroups(); // Refresh table
     } else {
         alert('Failed to add font to group');
+    }
+}
+
+async function addClientFontsToGroup(groupId) {
+    const select = document.getElementById('add-client-select');
+    const clientId = parseInt(select.value);
+    if (!clientId) { alert('Select a client first'); return; }
+    
+    const response = await fetch(`/api/groups/${groupId}/fonts/by-client?client_id=${clientId}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (response.ok) {
+        viewGroup(groupId);
+        loadGroups();
+    } else {
+        const err = await response.json();
+        alert('Failed to add client fonts: ' + (err.detail || 'Unknown error'));
+    }
+}
+
+async function addFamilyFontsToGroup(groupId) {
+    const select = document.getElementById('add-family-select');
+    const familyId = parseInt(select.value);
+    if (!familyId) { alert('Select a family first'); return; }
+    
+    const response = await fetch(`/api/groups/${groupId}/fonts/by-family?family_id=${familyId}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (response.ok) {
+        viewGroup(groupId);
+        loadGroups();
+    } else {
+        const err = await response.json();
+        alert('Failed to add family fonts: ' + (err.detail || 'Unknown error'));
     }
 }
 

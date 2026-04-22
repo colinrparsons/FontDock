@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 
 from app.db import get_db
-from app.models import Group as GroupModel, Font as FontModel, User as UserModel
+from app.models import Group as GroupModel, Font as FontModel, User as UserModel, Client as ClientModel, FontFamily as FontFamilyModel
 from app.schemas import (
     Group, GroupCreate, GroupUpdate, GroupDetail,
     GroupList, GroupFontAssign, GroupUserAssign,
@@ -70,6 +70,8 @@ async def get_group(
     db: Session = Depends(get_db),
 ):
     """Get group details with fonts and users."""
+    from sqlalchemy.orm import joinedload
+    from app.models import Font as FontModel
     group = db.query(GroupModel).filter(GroupModel.id == group_id).first()
     if not group:
         raise HTTPException(
@@ -86,6 +88,29 @@ async def get_group(
                 detail="You are not a member of this group",
             )
     
+    # Build font list with family_name populated
+    font_list = []
+    for f in group.fonts:
+        font_dict = {
+            "id": f.id,
+            "postscript_name": f.postscript_name,
+            "style_name": f.style_name,
+            "full_name": f.full_name,
+            "filename_original": f.filename_original,
+            "filename_storage": f.filename_storage,
+            "storage_path": f.storage_path,
+            "file_hash_sha256": f.file_hash_sha256,
+            "file_size_bytes": f.file_size_bytes,
+            "family_id": f.family_id,
+            "family_name": f.family.name if f.family else None,
+            "client_ids": [c.id for c in f.clients],
+            "group_ids": [g.id for g in f.groups],
+            "extension": f.extension,
+            "created_at": f.created_at,
+            "updated_at": f.updated_at,
+        }
+        font_list.append(font_dict)
+    
     return GroupDetail(
         id=group.id,
         name=group.name,
@@ -93,7 +118,7 @@ async def get_group(
         is_active=group.is_active,
         created_at=group.created_at,
         updated_at=group.updated_at,
-        fonts=group.fonts,
+        fonts=font_list,
         font_ids=[f.id for f in group.fonts],
         users=group.users,
         user_ids=[u.id for u in group.users],
@@ -202,6 +227,75 @@ async def assign_fonts_to_group(
         font_ids=[f.id for f in group.fonts],
         users=group.users,
         user_ids=[u.id for u in group.users],
+    )
+
+
+@router.post("/{group_id}/fonts/by-client", response_model=GroupDetail)
+async def assign_fonts_by_client(
+    group_id: int,
+    client_id: int,
+    current_user: dict = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Assign all fonts belonging to a client to a group (admin only)."""
+    group = db.query(GroupModel).filter(GroupModel.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    
+    client = db.query(ClientModel).filter(ClientModel.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+    
+    existing_font_ids = {f.id for f in group.fonts}
+    added = 0
+    for font in client.fonts:
+        if font.id not in existing_font_ids:
+            group.fonts.append(font)
+            added += 1
+    
+    db.commit()
+    db.refresh(group)
+    
+    return GroupDetail(
+        id=group.id, name=group.name, description=group.description,
+        is_active=group.is_active, created_at=group.created_at, updated_at=group.updated_at,
+        fonts=group.fonts, font_ids=[f.id for f in group.fonts],
+        users=group.users, user_ids=[u.id for u in group.users],
+    )
+
+
+@router.post("/{group_id}/fonts/by-family", response_model=GroupDetail)
+async def assign_fonts_by_family(
+    group_id: int,
+    family_id: int,
+    current_user: dict = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Assign all fonts in a family to a group (admin only)."""
+    group = db.query(GroupModel).filter(GroupModel.id == group_id).first()
+    if not group:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
+    
+    family = db.query(FontFamilyModel).filter(FontFamilyModel.id == family_id).first()
+    if not family:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Font family not found")
+    
+    family_fonts = db.query(FontModel).filter(FontModel.family_id == family_id).all()
+    existing_font_ids = {f.id for f in group.fonts}
+    added = 0
+    for font in family_fonts:
+        if font.id not in existing_font_ids:
+            group.fonts.append(font)
+            added += 1
+    
+    db.commit()
+    db.refresh(group)
+    
+    return GroupDetail(
+        id=group.id, name=group.name, description=group.description,
+        is_active=group.is_active, created_at=group.created_at, updated_at=group.updated_at,
+        fonts=group.fonts, font_ids=[f.id for f in group.fonts],
+        users=group.users, user_ids=[u.id for u in group.users],
     )
 
 
