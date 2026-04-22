@@ -95,16 +95,34 @@ async def list_fonts(
     # Build query with family join
     query = db.query(FontModel).options(joinedload(FontModel.family))
     
-    # Group-based access control: non-admin users only see fonts from their groups
+    # Group-based access control: non-admin users see fonts from their groups
+    # plus fonts from collections/clients if they have those permissions
     if not current_user.is_admin:
-        user_group_font_ids = (
+        accessible_font_ids = (
             db.query(FontModel.id)
             .join(FontModel.groups)
             .join(GroupModel.users)
             .filter(User.id == current_user.id)
-            .subquery()
         )
-        query = query.filter(FontModel.id.in_(user_group_font_ids))
+        
+        # If user has collection permission, also include fonts from all collections
+        if current_user.can_create_collections:
+            collection_font_ids = (
+                db.query(FontModel.id)
+                .join(FontModel.collections)
+            )
+            accessible_font_ids = accessible_font_ids.union(collection_font_ids)
+        
+        # If user has client permission, also include fonts from all clients
+        if current_user.can_create_clients:
+            client_font_ids = (
+                db.query(FontModel.id)
+                .join(FontModel.clients)
+            )
+            accessible_font_ids = accessible_font_ids.union(client_font_ids)
+        
+        accessible_subquery = accessible_font_ids.subquery()
+        query = query.filter(FontModel.id.in_(accessible_subquery))
     
     if family_id:
         query = query.filter(FontModel.family_id == family_id)
@@ -173,11 +191,22 @@ async def get_font(
             detail="Font not found",
         )
     
-    # Group access check for non-admin users
+    # Access check for non-admin users
     if not current_user.is_admin:
+        has_access = False
+        # Check group membership
         font_group_ids = {g.id for g in font.groups}
         user_group_ids = {g.id for g in current_user.groups}
-        if not font_group_ids.intersection(user_group_ids):
+        if font_group_ids.intersection(user_group_ids):
+            has_access = True
+        # Check collection permission - fonts in any collection are accessible
+        if not has_access and current_user.can_create_collections and font.collections:
+            has_access = True
+        # Check client permission - fonts in any client are accessible
+        if not has_access and current_user.can_create_clients and font.clients:
+            has_access = True
+        
+        if not has_access:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have access to this font",
@@ -308,11 +337,18 @@ async def download_font(
             detail="Font is not active",
         )
     
-    # Group access check for non-admin users
+    # Access check for non-admin users
     if not current_user.is_admin:
+        has_access = False
         font_group_ids = {g.id for g in font.groups}
         user_group_ids = {g.id for g in current_user.groups}
-        if not font_group_ids.intersection(user_group_ids):
+        if font_group_ids.intersection(user_group_ids):
+            has_access = True
+        if not has_access and current_user.can_create_collections and font.collections:
+            has_access = True
+        if not has_access and current_user.can_create_clients and font.clients:
+            has_access = True
+        if not has_access:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have access to this font",
