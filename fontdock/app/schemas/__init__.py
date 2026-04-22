@@ -43,6 +43,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+    group_ids: List[int] = []
 
 
 class UserUpdate(BaseModel):

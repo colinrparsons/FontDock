@@ -43,6 +43,19 @@ if (!token) {
                 </label>
             </div>
         </div>
+        {% if groups %}
+        <div style="margin-top: 0.5rem;">
+            <label style="font-weight: 600; margin-bottom: 0.25rem; display: block;">Assign to Groups:</label>
+            <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                {% for group in groups %}
+                <label style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer; background: #f3f4f6; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 13px;">
+                    <input type="checkbox" class="group-checkbox" value="{{ group.id }}">
+                    <span>{{ group.name }}</span>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
         <div style="margin-top: 0.5rem;">
             <button type="submit" class="btn">Create User</button>
             <span id="create-result" class="text-muted" style="margin-left: 1rem;"></span>
@@ -68,6 +81,7 @@ if (!token) {
                 <th>Last Name</th>
                 <th>Username</th>
                 <th>Email</th>
+                <th>Groups</th>
                 <th>Admin</th>
                 <th>Active</th>
                 <th>Sessions</th>
@@ -82,6 +96,7 @@ if (!token) {
                 <td>{{ user.last_name or '' }}</td>
                 <td>{{ user.username }}</td>
                 <td>{{ user.email }}</td>
+                <td class="user-groups" data-user-id="{{ user.id }}">-</td>
                 <td>{% if user.is_admin %}Yes{% else %}No{% endif %}</td>
                 <td>{% if user.is_active %}Active{% else %}Inactive{% endif %}</td>
                 <td class="session-count" data-user-id="{{ user.id }}">-</td>
@@ -117,7 +132,8 @@ document.getElementById('create-user-form').addEventListener('submit', async (e)
         email: document.getElementById('email').value,
         password: document.getElementById('password').value,
         is_admin: document.getElementById('is_admin').checked,
-        is_active: true
+        is_active: true,
+        group_ids: Array.from(document.querySelectorAll('.group-checkbox:checked')).map(cb => parseInt(cb.value))
     };
     
     try {
@@ -278,6 +294,53 @@ function logoutUser(userId, username) {
 
 // Load sessions on page load
 loadSessions();
+
+// Load group assignments for users
+async function loadUserGroups() {
+    try {
+        const response = await fetch('/api/groups', {
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        
+        // Build user->groups map
+        const userGroupsMap = {};
+        for (const group of data.items) {
+            // Need to fetch detail to get user_ids
+            const detailRes = await fetch(`/api/groups/${group.id}`, {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            if (!detailRes.ok) continue;
+            const detail = await detailRes.json();
+            for (const uid of (detail.user_ids || [])) {
+                if (!userGroupsMap[uid]) userGroupsMap[uid] = [];
+                userGroupsMap[uid].push(group.name);
+            }
+        }
+        
+        // Update UI
+        document.querySelectorAll('.user-groups').forEach(cell => {
+            const userId = parseInt(cell.dataset.userId);
+            const groups = userGroupsMap[userId] || [];
+            if (groups.length > 0) {
+                cell.innerHTML = groups.map(g => `<span style="background: #e0e7ff; color: #4338ca; padding: 1px 6px; border-radius: 4px; font-size: 11px; margin-right: 2px;">${escapeHtml(g)}</span>`).join('');
+            } else {
+                cell.textContent = '-';
+            }
+        });
+    } catch (err) {
+        console.error('Failed to load user groups:', err);
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+loadUserGroups();
 
 // Refresh sessions every 30 seconds
 setInterval(loadSessions, 30000);

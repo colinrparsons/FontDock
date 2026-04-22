@@ -336,9 +336,10 @@ def create_app() -> FastAPI:
         db: Session = Depends(get_db),
     ):
         try:
-            from app.models import User
+            from app.models import User, Group as GroupModel
             users = db.query(User).filter(User.is_active == True).all()
-            html = render_template("users.html", request=request, users=users)
+            groups = db.query(GroupModel).filter(GroupModel.is_active == True).order_by(GroupModel.name).all()
+            html = render_template("users.html", request=request, users=users, groups=groups)
             return HTMLResponse(content=html)
         except Exception as e:
             logger.error(f"Users page error: {e}", exc_info=True)

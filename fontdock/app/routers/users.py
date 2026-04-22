@@ -213,6 +213,15 @@ async def create_new_user(
         can_create_collections=data.can_create_collections,
         can_create_clients=data.can_create_clients,
     )
+    
+    # Assign user to groups if specified
+    if data.group_ids:
+        from app.models import Group as GroupModel
+        groups = db.query(GroupModel).filter(GroupModel.id.in_(data.group_ids)).all()
+        for group in groups:
+            group.users.append(new_user)
+        db.commit()
+    
     logger.info(f"[AUDIT] User created: ID={new_user.id}, username='{new_user.username}', admin='{current_user.username}'")
     
     return new_user
